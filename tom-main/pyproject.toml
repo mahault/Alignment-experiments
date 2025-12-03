@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tom"
+authors = [
+    {name = "Verses Inc", email = "verses@verses.ai"},
+]
+description = "Multi-Agent Active Inference with Theory of Mind"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "dm-meltingpot==2.4.0",
+    "mediapy==1.2.2",
+    "imageio==2.36.0",
+    "ipywidgets==8.1.5",
+    "ipympl==0.9.7",
+    "pygraphviz==1.14",
+]
+dynamic = ["version"]
+
+[tool.setuptools_scm]
+
+[tool.setuptools.packages.find]
+include = ["tom", "experiments"]
+
+
