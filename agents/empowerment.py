@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Dict, List, Tuple, Optional
 import numpy as np
+
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
 
 
 def estimate_empowerment_one_step(
@@ -36,8 +40,11 @@ def estimate_empowerment_one_step(
     probs = transition_logits / (transition_logits.sum(axis=1, keepdims=True) + eps)
     num_actions, num_obs = probs.shape
 
+    LOGGER.debug(f"Computing one-step empowerment: num_actions={num_actions}, num_obs={num_obs}")
+
     # If degenerate, return 0
     if num_actions <= 1 or num_obs <= 1:
+        LOGGER.warning(f"Degenerate case: num_actions={num_actions}, num_obs={num_obs}. Returning 0.")
         return 0.0
 
     # Brute-force over a fixed small family of p(a).
@@ -52,6 +59,7 @@ def estimate_empowerment_one_step(
     ratio = probs / (p_o[None, :] + eps)
     mi = (p_ao * (np.log(ratio + eps))).sum()
 
+    LOGGER.debug(f"Computed empowerment (MI): {mi:.4f}")
     return float(mi)
 
 
@@ -76,16 +84,24 @@ def estimate_empowerment_over_rollout(
         Weighted average empowerment over the rollout
     """
     if not transition_logits_seq:
+        LOGGER.warning("Empty transition_logits_seq provided. Returning 0.")
         return 0.0
 
     T = len(transition_logits_seq)
+    LOGGER.debug(f"Computing empowerment over rollout: T={T} timesteps")
+
     if weights is None:
         weights = [1.0 / T] * T
 
     emps = []
-    for logits in transition_logits_seq:
-        emps.append(estimate_empowerment_one_step(logits))
+    for t, logits in enumerate(transition_logits_seq):
+        emp = estimate_empowerment_one_step(logits)
+        emps.append(emp)
+        LOGGER.debug(f"  t={t}: empowerment={emp:.4f}")
 
     emps = np.array(emps)
     weights = np.array(weights)
-    return float((weights * emps).sum())
+    weighted_emp = float((weights * emps).sum())
+
+    LOGGER.info(f"Weighted average empowerment over rollout: {weighted_emp:.4f}")
+    return weighted_emp

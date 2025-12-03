@@ -7,7 +7,7 @@ from pymdp.control import sample_action
 from pymdp.maths import softmax
 from pymdp.utils import dirichlet_like
 
-LOGGER = logging.getLogger()
+LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
 
 
@@ -15,6 +15,7 @@ class EmpatheticAgent:
     def __init__(self, config: dict, agent_num: int) -> None:
 
         self.agent_num = agent_num
+        LOGGER.info(f"Initializing EmpatheticAgent {agent_num}")
 
         # Pull out config parameters for cleaner access within class
         self.A              = config["A"][self.agent_num]
@@ -30,6 +31,8 @@ class EmpatheticAgent:
         # NEW: optional empowerment weight gamma (how much empowerment matters vs EFE)
         # If not provided in config, default to 1.0
         self.gamma          = config.get("gamma", 1.0)
+
+        LOGGER.debug(f"  Agent {agent_num}: empathy_factor={self.empathy_factor}, gamma={self.gamma}, learn={self.learn}")
 
         # Get number of observation categories to use in generating observation for t=0
         num_obs_categories = self.A[0][self.agent_num].shape[0]
@@ -89,6 +92,8 @@ class EmpatheticAgent:
         # Initialize previous variational state posterior with state prior
         self.qs_prev = None
 
+        LOGGER.info(f"  Agent {agent_num} initialized with {self.num_policies} policies and {self.K} ToM agents")
+
     def step(self, t: int, o: "np.ndarray") -> list:
         """
         Each agent step consists of the following:
@@ -100,8 +105,11 @@ class EmpatheticAgent:
            to determine variational policy posterior, action marginal, and chosen action.
         5. [TODO] Determine emotion state of agent from weighted VFE and EFE.
         """
+        LOGGER.debug(f"Agent {self.agent_num} step t={t}")
+
         if t == 0:
             o = self.o_init
+            LOGGER.debug(f"  t=0: using initial observation {o}")
 
         # Create empty container for storing step results
         step_results = {}
@@ -115,13 +123,16 @@ class EmpatheticAgent:
 
         # Extract EFE for all ToM agents under each policy (shape [K, num_policies])
         EFE_arr = self._extract_tom_EFE(tom_results=step_results["tom_results"])
+        LOGGER.debug(f"  EFE_arr shape: {EFE_arr.shape}, mean: {EFE_arr.mean():.4f}")
 
         # NEW: compute empowerment matrix (shape [K, num_policies])
         # Right now this is a stub returning zeros; to be replaced with real empowerment.
         Emp_arr = self._compute_empowerment_matrix(tom_results=step_results["tom_results"])
+        LOGGER.debug(f"  Emp_arr shape: {Emp_arr.shape}, mean: {Emp_arr.mean():.4f}")
 
         # Calculate agent's expected EFE, augmented by empowerment and empathy
         exp_EFE = self._expected_value_EFE(EFE_arr=EFE_arr, Emp_arr=Emp_arr)
+        LOGGER.debug(f"  Expected EFE (augmented): mean={exp_EFE.mean():.4f}, min={exp_EFE.min():.4f}, max={exp_EFE.max():.4f}")
 
         # Calculate agent's expected Q_pi and action
         exp_q_pi = softmax(exp_EFE)
@@ -138,6 +149,8 @@ class EmpatheticAgent:
         step_results["exp_q_pi"]   = exp_q_pi
         step_results["exp_p_u"]    = p_u
         step_results["exp_action"] = exp_action
+
+        LOGGER.debug(f"  Agent {self.agent_num} chose action: {exp_action} (action idx: {int(exp_action)})")
 
         return step_results
 

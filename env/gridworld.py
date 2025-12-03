@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
 import numpy as np
 import random
+
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
 
 Position = Tuple[int, int]
 
@@ -49,6 +53,7 @@ class GridWorld:
         self.agent_ids = ["A", "B"]
         self.agent_positions: Dict[str, Position] = {}
         self.t = 0
+        LOGGER.info(f"GridWorld initialized: {self.config.height}x{self.config.width}, slip_prob={self.config.slip_prob}")
 
     # -------------------------------------------------------------------------
     # Public API
@@ -64,6 +69,7 @@ class GridWorld:
             "A": (3, 1),  # row, col
             "B": (3, 2),
         }
+        LOGGER.info(f"Environment reset. Agent positions: {self.agent_positions}")
         return self._get_observations()
 
     def step(
@@ -80,30 +86,39 @@ class GridWorld:
             info: dict with debug data
         """
         self.t += 1
+        LOGGER.debug(f"Step {self.t}: Actions={actions}")
 
         proposed = {
             aid: self._apply_action_with_slip(aid, actions.get(aid, "STAY"))
             for aid in self.agent_ids
         }
+        LOGGER.debug(f"  Proposed positions (after slip): {proposed}")
 
         # resolve walls and bounds
         proposed = {
             aid: self._clip_to_valid(pos, self.agent_positions[aid])
             for aid, pos in proposed.items()
         }
+        LOGGER.debug(f"  Valid positions (after clipping): {proposed}")
 
         # handle collisions
         new_positions, collision_pairs = self._resolve_collisions(proposed)
+        if collision_pairs:
+            LOGGER.warning(f"  Collision detected: {collision_pairs}")
 
         self.agent_positions = new_positions
 
         rewards, dones, info = self._compute_rewards_and_dones(collision_pairs)
+        LOGGER.debug(f"  Rewards: {rewards}, Dones: {dones}")
 
         obs = self._get_observations()
         done_global = all(dones.values()) or self.t >= self.config.max_steps
 
         info["collision_pairs"] = collision_pairs
         info["t"] = self.t
+
+        if done_global:
+            LOGGER.info(f"Episode finished at step {self.t}. Final info: {info}")
 
         return obs, rewards, dones, done_global, info
 
@@ -159,11 +174,13 @@ class GridWorld:
         """
         assert action in self.ACTIONS, f"Unknown action: {action}"
         pos = self.agent_positions[agent_id]
+        original_action = action
 
         if random.random() < self.config.slip_prob:
             # slip to a random other action (except STAY to keep it interesting)
             candidate_actions = [a for a in self.ACTIONS if a != "STAY"]
             action = random.choice(candidate_actions)
+            LOGGER.debug(f"    Agent {agent_id} slipped: {original_action} -> {action}")
 
         dx, dy = self.ACTION_TO_DELTA[action]
         return (pos[0] + dx, pos[1] + dy)
