@@ -1,165 +1,360 @@
-# Relational Empowerment, ToM, Empathy, and Emergent Alignment
+# Path Flexibility, Empathy, and Theory of Mind in Active Inference
 
-## Active Inference Multi-Agent Experimental Framework
+## Motivation & High-Level Idea
 
-### 1. Overview
+**Alignment need not be explicitly encoded in preference vectors.** Instead, we propose that alignment emerges naturally when agents maintain **mutual path flexibility**—the capacity to preserve each other's future option sets while pursuing their own goals.
 
-This repository implements a modular framework for studying emergent alignment in multi-agent active inference systems.
+In multi-agent active inference systems, agents minimize expected free energy (EFE) by balancing epistemic value (information gain) with pragmatic value (preference satisfaction). When combined with **Theory of Mind (ToM)**, agents form predictions about each other's beliefs, policies, and expected futures. When augmented with **empathy** (weighting others' EFE in their own decision-making), agents can coordinate without explicit reward sharing.
 
-The core idea is that **alignment does not need to be encoded directly in agents' preference vectors**.
-Instead, alignment emerges (or fails to emerge) depending on how agents:
+**The central question:** Does high joint path flexibility naturally correlate with low joint EFE? Or do we need an explicit flexibility-aware prior to guide agents toward mutually robust policies? This repository implements two experiments to test these hypotheses in a transparent, controlled multi-agent gridworld.
 
-- Predict each other's behaviour using **Theory of Mind (ToM)**.
-- Weigh each other's expected free energy using **Empathy (�)**.
-- Preserve or collapse each other's future option sets via **Empowerment**, our operational measure of path flexibility.
+---
 
-The goal is to investigate how these three ingredients interact inside a minimal, transparent, controlled world where we can literally see how belief dynamics give rise to coordination or brittleness.
+## Conceptual Building Blocks
 
- 
+### 1. Active Inference & Expected Free Energy (EFE)
 
-### 2. Key Concepts
+Active inference agents don't maximize rewards—they minimize **surprise** about preferred observations. The core quantity is EFE:
 
-#### 2.1 Path Flexibility (Operationalised as Empowerment)
+```
+G(π) = E_q(π)[KL[q(o_τ|π) || p(o_τ)] - log p(o_τ)]
+```
 
-**Empowerment** is the subjective mutual information between an agent's actions and its future observations.
-It measures how many distinct, controllable futures an agent can induce from a given state.
+- **Epistemic term**: Information gain (exploring uncertainty)
+- **Pragmatic term**: Achieving preferred observations (encoded in prior C)
 
-We use empowerment as a direct, model-based proxy for **path flexibility**:
+Policies are selected via: `q(π) = softmax(-γ G(π))`
 
-- **High empowerment** � wide corridor of possible futures; robust, multi-path behaviour.
-- **Low empowerment** � bottlenecks, traps, deadlocks; small perturbations can cause catastrophes.
+### 2. Empowerment
 
-In multi-agent settings, empowerment becomes explicitly **relational**:
+**Empowerment** E is the channel capacity between actions and future observations:
 
-- If Agent A's actions constrain Agent B's movements, B's empowerment drops.
-- If A preserves B's space of possible futures, B's empowerment stays high.
+```
+E = max_p(a) I(A; O_future)
+```
 
-This **relational collapse of empowerment** is the operational definition of interaction-induced brittleness.
+It measures **how many distinct, controllable futures** an agent can induce from a given state.
 
-#### 2.2 Empathy (�)
+- **High empowerment** → wide corridor of possible futures; robust, multi-path behavior
+- **Low empowerment** → bottlenecks, traps; small perturbations cause failure
 
-Each agent weighs the other's expected free energy (EFE) and empowerment using an empathy parameter **�  [0,1]**:
+### 3. Path Flexibility
 
-- **� = 0**: purely selfish planning
-- **� > 0**: partially or strongly weighting the other agent's risks and controllability
+We define **path flexibility** F(π) for a policy π as a weighted combination of:
 
-This provides a clean way to study:
+```
+F(π) = λ_E · E(π) + λ_R · R(π) + λ_O · O(π)
+```
 
-- Selfish ToM
-- Empathic ToM
-- Empowerment-aware ToM
-- Fully relational alignment (both empathy and empowerment sensitivity)
+Where:
 
-#### 2.3 Theory of Mind (ToM)
+- **E(π)**: Expected empowerment along the trajectory
+- **R(π)**: Returnability—probability of reaching shared "safe" outcome sets
+- **O(π)**: Outcome overlap—how much agents' predicted outcome distributions overlap
 
-Agents maintain nested generative models of each other's beliefs, actions, and expected free energies.
+**In multi-agent settings**, path flexibility becomes **relational**:
+- If Agent A's actions constrain Agent B's movements, B's empowerment drops
+- If A preserves B's option space, both maintain high flexibility
+- **Relational collapse of empowerment** = interaction-induced brittleness
 
-Using the ToM tree-search (`si_tom`, `Tree`, `rollout_tom`):
+### 4. Theory of Mind (ToM)
 
-- Each agent simulates its own future
-- And simulates the other's future
-- Including their predicted actions, belief updates, and empowerment
+Agents maintain nested generative models of each other. Using ToM tree search:
 
-This allows the agent to evaluate:
+- Agent i simulates its own future rollout under each candidate policy
+- Agent i also simulates Agent j's future rollout (including j's beliefs and policies)
+- This allows Agent i to evaluate:
+  - Its own EFE: G_i(π)
+  - Agent j's EFE: G_j(π)
+  - Its own empowerment: E_i(π)
+  - Agent j's empowerment: E_j(π)
 
-- its own trajectory EFE
-- the other agent's trajectory EFE
-- its own empowerment
-- the other agent's empowerment
+### 5. Empathy
 
-under each candidate policy.
+Agent i weights Agent j's EFE using empathy parameter α ∈ [0,1]:
 
- 
+```
+G_social^i(π) = G_i(π) + α · G_j(π)
+```
 
-### 3. Experiment 1
+- α = 0: Purely selfish
+- α > 0: Partially or fully prosocial
 
-#### Goal
+---
 
-Demonstrate that even when agents have:
+## Experiment 1: Hypothesis Test (Flexibility ↔ Joint EFE?)
 
-- identical, purely selfish preferences
-- bounded ToM
-- imperfect predictions
-- stochastic transitions
+### Goal
+Test whether **high joint path flexibility naturally correlates with low joint EFE**, even when agents don't explicitly optimize for flexibility.
 
-the inclusion of **relational empowerment awareness** and/or **empathy** changes behavioural equilibria:
+### Setup
 
-- avoiding brittle bottlenecks
-- staggering through high-risk areas
-- taking flexible detours
-- achieving mutually non-destructive outcomes
+**Environment**: Two-agent lava corridor gridworld
+- Narrow, risky bottleneck in the center
+- Wider, safe detour path
+- Stochastic slips (5% chance)
+- Collision = catastrophe
+- Individual goals (no shared rewards)
 
-#### Environment
+**Agents**:
+- Full ToM (depth-1 nested belief tracking)
+- Empathy parameter α (weight on other's EFE)
+- **No explicit flexibility term in decision rule**
 
-A tiny, transparent, multi-agent gridworld:
+**Decision rule**:
+```
+q(π) = softmax(-γ [G_i(π) + α G_j(π)])
+```
 
-- narrow, risky bottleneck corridor
-- wide, safe detour
-- stochastic slips/drifts
-- collision = catastrophe
-- no shared rewards
+### What We Log
 
-#### Metrics
+For each candidate policy π during planning:
+- **EFE**: G_i(π), G_j(π), G_joint = G_i + G_j
+- **Path flexibility**: F_i(π), F_j(π), F_joint = F_i + F_j
+  - Empowerment E(π)
+  - Returnability R(π)
+  - Overlap O(π)
 
-Three classes:
+### Analysis
+- **Correlation plots**: F_joint vs G_joint across all considered policies
+- **Selected policies**: Do agents naturally choose high-F policies when minimizing G?
+- **Behavioral outcomes**: Collision rates, bottleneck usage, goal achievement
 
-**System-Level Performance**
+**Hypothesis**: If agents with ToM + empathy naturally avoid low-flexibility policies (bottlenecks, deadlocks), we should see **negative correlation** between F and G.
 
-- joint success rate
-- collisions/deadlocks
-- robustness to noise
+---
 
-**Relational Empowerment / Path Flexibility**
+## Experiment 2: Path-Flexibility-Aware Policy Prior
 
-- empowerment over time
-- "option-set collapse" events
-- solo vs multi-agent empowerment gaps
+### Goal
+Explicitly add a **flexibility-aware prior** over policies and compare behavior to Experiment 1.
 
-**Emergent Alignment**
+### Setup
 
-- mutually non-destructive outcomes
-- sensitivity to preference mismatches
-- stability of coordination
+Same environment, same ToM + empathy core, but now:
 
- 
+**Policy prior**:
+```
+p(π) ∝ exp(κ [F_i(π) + β F_j(π)])
+```
 
-### 4. Roadmap
+Where:
+- κ: Strength of flexibility preference
+- β: How much agent i cares about agent j's flexibility
 
-1. **Define Environment**
-   - Gridworld with bottleneck & detour
-   - Transition matrix with stochastic slips
-   - Catastrophic collisions
-   - Individual goals and rewards
+**Decision rule** (combined objective):
+```
+J_i(π) = G_i(π) + α G_j(π) - (κ/γ)[F_i(π) + β F_j(π)]
+q(π) = softmax(-γ J_i(π))
+```
 
-2. **Implement Agents**
-   - Active Inference Agent (pymdp.Agent)
-   - ToM wrappers (ToMAgent)
-   - Empathy integration
-   - Empowerment computation
+### Manipulations
 
-3. **Policy Evaluation**
-   - Generate candidate policies
-   - For each:
-     - compute self/other EFE
-     - compute self/other empowerment
-     - combine under empathy-weighted objective
+Sweep over κ ∈ [0, 0.5, 1.0, 2.0]:
+- κ = 0: Reduces to Experiment 1 (no F-prior)
+- κ > 0: Increasing preference for flexible policies
 
-4. **Simulation Loop**
-   - Roll each episode
-   - Each agent: ToM � evaluate policies � sample action
-   - Update environment
-   - Log empowerment, EFE, actions, collisions
+### Analysis
+- **Behavioral changes**: As κ increases:
+  - Do agents prefer detours over bottlenecks?
+  - Do collision rates drop?
+  - Do agents sacrifice pragmatic value (slower goal achievement) for safety?
+- **F vs EFE trade-off**: Plot F(π_chosen) vs G(π_chosen) as function of κ
+- **Resilience**: Introduce layout perturbations mid-episode—do high-κ agents recover better?
 
-5. **Analysis**
-   - Plot empowerment trajectories
-   - Compare bottleneck usage
-   - Compare success rates
-   - Study dependence on � (empathy) and empowerment-weight �
+**Hypothesis**: Explicit F-prior should:
+1. Push agents toward mutually safe, flexible policies
+2. Reduce catastrophic failures (lava, collisions)
+3. Trade off pragmatic efficiency for robustness
 
-6. **Generalization**
-   - shocks (layout changes)
-   - preference plasticity
-   - precision asymmetries (power)
-   - horizon mismatches (temporal power)
+---
 
+## Code Architecture
 
+```
+Alignment-experiments/
+├── README.md                    # This file
+├── requirements.txt
+├── pyproject.toml              # Optional packaging config
+│
+├── src/
+│   ├── agents/
+│   │   ├── empathetic_agent.py    # Empathy-weighted EFE agent (legacy/baseline)
+│   │   └── __init__.py
+│   │
+│   ├── tom/
+│   │   ├── si_tom.py              # ToM tree search & policy evaluation
+│   │   ├── rollout_tom.py         # Multi-agent rollout with ToM
+│   │   └── __init__.py
+│   │
+│   ├── envs/
+│   │   ├── lava_corridor.py       # Two-agent gridworld environment
+│   │   └── __init__.py
+│   │
+│   ├── metrics/
+│   │   ├── empowerment.py         # Empowerment computation (MI estimation)
+│   │   ├── path_flexibility.py    # F(π) = λE·E + λR·R + λO·O
+│   │   └── __init__.py
+│   │
+│   └── common/
+│       ├── types.py               # Shared dataclasses/types
+│       └── __init__.py
+│
+├── experiments/
+│   ├── exp1_flex_vs_efe.py        # Experiment 1: Measure F-EFE correlation
+│   ├── exp2_flex_prior.py         # Experiment 2: F-aware policy prior
+│   └── utils_plotting.py          # Shared plotting utilities
+│
+├── notebooks/
+│   ├── sanity_check_single_agent.ipynb
+│   ├── visualize_lava_corridor.ipynb
+│   └── analysis_flex_vs_efe.ipynb
+│
+└── results/                       # Saved metrics, plots, logs
+    ├── exp1/
+    └── exp2/
+```
+
+### Key Modules
+
+**`tom/si_tom.py`**
+- `run_tom_step()`: Theory of Mind inference for all K agents
+- Returns: `tom_results`, `EFE_arr [K, num_policies]`, `Emp_arr [K, num_policies]`
+- Handles state inference, policy inference, belief updates, learning
+
+**`tom/rollout_tom.py`**
+- `rollout()`: Multi-agent environment interaction loop
+- Integrates ToM tree search at each timestep
+- Logs trees, beliefs, policies, metrics
+
+**`metrics/path_flexibility.py`**
+- `compute_empowerment_along_path()`: Average empowerment over policy trajectory
+- `compute_returnability()`: Probability of reaching shared safe outcomes
+- `compute_overlap()`: Outcome distribution overlap between agents
+- `compute_path_flexibility()`: Combined F(π) metric
+
+**`envs/lava_corridor.py`**
+- Multi-agent gridworld with:
+  - Narrow bottleneck (high risk, low flexibility)
+  - Wide detour (safe, high flexibility)
+  - Stochastic slips
+  - Collision detection
+  - Individual goal states
+
+---
+
+## How to Run
+
+### Setup
+
+```bash
+# Clone repository
+git clone https://github.com/yourusername/Alignment-experiments.git
+cd Alignment-experiments
+
+# Create conda environment
+conda create -n alignment python=3.10
+conda activate alignment
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Run Experiment 1
+
+```bash
+python experiments/exp1_flex_vs_efe.py \
+  --num_episodes 100 \
+  --alpha 0.5 \
+  --gamma 16.0 \
+  --output_dir results/exp1
+```
+
+**Output**:
+- `results/exp1/metrics.pkl` - Raw policy metrics (G, F per policy per episode)
+- `results/exp1/correlation_plot.png` - F vs EFE scatter plot
+- `results/exp1/behavioral_stats.json` - Collision rates, goal achievement, etc.
+
+### Run Experiment 2
+
+```bash
+python experiments/exp2_flex_prior.py \
+  --num_episodes 100 \
+  --alpha 0.5 \
+  --kappa_values 0.0 0.5 1.0 2.0 \
+  --beta 1.0 \
+  --gamma 16.0 \
+  --output_dir results/exp2
+```
+
+**Output**:
+- `results/exp2/metrics_kappa_{k}.pkl` - Metrics per κ value
+- `results/exp2/comparison_plots.png` - Behavior across κ values
+- `results/exp2/resilience_test.json` - Performance under perturbations
+
+### Analysis Notebooks
+
+```bash
+jupyter notebook notebooks/analysis_flex_vs_efe.ipynb
+```
+
+Generates:
+- Correlation plots (F vs EFE)
+- Policy selection heatmaps
+- Trajectory visualizations
+- Statistical tests (Pearson correlation, t-tests)
+
+---
+
+## Roadmap / TODO
+
+### Near-term (Current Focus)
+- [x] Refactor ToM into standalone `tom/si_tom.py` module
+- [x] Add comprehensive logging to all modules
+- [ ] Reorganize repository structure (src/, experiments/, notebooks/)
+- [ ] Implement `metrics/path_flexibility.py` (E, R, O computations)
+- [ ] Build `envs/lava_corridor.py` gridworld
+- [ ] Write `experiments/exp1_flex_vs_efe.py` script
+- [ ] Write `experiments/exp2_flex_prior.py` script
+
+### Mid-term (Extensions)
+- [ ] Multi-agent (K > 2) experiments
+- [ ] More complex environments (partially observable, larger state spaces)
+- [ ] Connect to geodesic metrics from "Belief Geodesics" framework
+- [ ] Preference plasticity (agents learn C over time)
+- [ ] Power/precision asymmetry experiments
+
+### Long-term (Research Directions)
+- [ ] Hierarchical ToM (depth > 1 nested beliefs)
+- [ ] Continuous action/state spaces
+- [ ] Language-grounded communication protocols
+- [ ] Connection to game-theoretic equilibria
+- [ ] Formal proofs of alignment under flexibility constraints
+
+---
+
+## Citation
+
+If you use this code or build on these ideas, please cite:
+
+```bibtex
+@software{path_flexibility_tom_2025,
+  title={Path Flexibility, Empathy, and Theory of Mind in Active Inference},
+  author={Your Name},
+  year={2025},
+  url={https://github.com/yourusername/Alignment-experiments}
+}
+```
+
+---
+
+## License
+
+MIT License - See LICENSE file for details.
+
+---
+
+## Contact
+
+For questions, suggestions, or collaborations:
+- GitHub Issues: [https://github.com/yourusername/Alignment-experiments/issues](https://github.com/yourusername/Alignment-experiments/issues)

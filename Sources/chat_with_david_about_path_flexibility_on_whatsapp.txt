@@ -1,0 +1,71 @@
+2025-12-02, 8:55 a.m. - Mao: I'm considering this for my ToM experiments
+2025-12-02, 10:05 a.m. - Mao: ok so
+2025-12-02, 10:05 a.m. - Mao: I have a problem
+2025-12-02, 10:05 a.m. - Mao: nowhere in EFE is path encroachment actually contained
+2025-12-02, 10:05 a.m. - Mao: we know that empowerment effectively sortof captures this... sortof
+2025-12-02, 10:05 a.m. - Mao: Should we use empowerment and have them directly measure it?
+2025-12-02, 10:07 a.m. - Mao: I'm thinking of using sophisticated inference here
+2025-12-02, 10:07 a.m. - Mao: I'm trying to respond to Trevor
+2025-12-02, 10:08 a.m. - Mao: But I'm stuck on this one bit
+2025-12-02, 10:25 a.m. - Mao: Like perhaps we can use the rollouts, and then effectively treat the entire tree as opposed to just a sampled branch
+2025-12-02, 10:54 a.m. - David Hyland: Looks interesting, would need to dive deeper into the implementation
+2025-12-02, 10:55 a.m. - David Hyland: Yeah it seems like empowerment is the more natural thing to measure
+2025-12-02, 10:57 a.m. - David Hyland: Or path divergence if you want preferences?
+2025-12-02, 10:59 a.m. - Mao: Yeah I mean... path entropy, plus overall paths efe
+2025-12-02, 10:59 a.m. - Mao: I dunno. Im stuck
+2025-12-02, 11:06 a.m. - Mao: This feels like an extra term and I don't like that
+2025-12-02, 1:16 p.m. - David Hyland: Then just go with empowerment?
+2025-12-02, 1:16 p.m. - David Hyland: It makes fewest assumptions about goals in a sense
+2025-12-02, 1:16 p.m. - Mao: Yeah? The way that Philip computed it?
+2025-12-02, 1:20 p.m. - Mao: And are we then considering that empowerment is equivalent to path flexibility?
+2025-12-02, 8:58 p.m. - Mao: https://youtu.be/skcOoqR_uh4?si=WwXRI-RyWn98OQCN
+2025-12-02, 8:58 p.m. - Mao: Check out the first few minutes
+2025-12-02, 8:58 p.m. - Mao: How Candace Owens talks about goodness
+2025-12-02, 8:59 p.m. - Mao: The semantic relationships to goodness are completely similar to ours
+2025-12-02, 8:59 p.m. - Mao: Its her notion of what is good that differs
+2025-12-02, 8:59 p.m. - Mao: But that's inconsistent with my current understanding of semantic webs
+2025-12-02, 8:59 p.m. - Mao: Seems like there's a shielding
+2025-12-03, 2:00 a.m. - David Hyland: You mean counting states?
+2025-12-03, 2:00 a.m. - David Hyland: Hmmmm I don't think so
+2025-12-03, 2:25 a.m. - David Hyland: What do you mean by this?
+2025-12-03, 6:55 a.m. - Mao: <Media omitted>
+2025-12-03, 6:58 a.m. - Mao: Yeah I mean there's a component missing right?
+2025-12-03, 6:58 a.m. - Mao: The returnability. Or connection among the states
+2025-12-03, 6:59 a.m. - David Hyland: Yeah makes sense. I think the systems involved in defining the semantics of value-laden concepts like good and evil are probably quite different from those relating to more descriptive concepts
+2025-12-03, 6:59 a.m. - David Hyland: Also probably to do with the level of abstraction
+2025-12-03, 6:59 a.m. - David Hyland: Yeah
+2025-12-03, 6:59 a.m. - David Hyland: Been meaning to think about this
+2025-12-03, 7:00 a.m. - Mao: Yeah this isn't... its nowhere in the FEP
+2025-12-03, 7:00 a.m. - Mao: This would have to be an entirely new term
+2025-12-03, 7:00 a.m. - David Hyland: In automata theory and verification there's a concept called reachability which is basically which states you can reach under some policy
+2025-12-03, 7:00 a.m. - Mao: Yeah that seems related
+2025-12-03, 7:01 a.m. - David Hyland: Yeah, but it doesn't quite capture it either
+2025-12-03, 7:01 a.m. - Mao: A mix of empowerment and conserved reachability
+2025-12-03, 7:01 a.m. - David Hyland: I guess it's also related to reversibility
+2025-12-03, 7:01 a.m. - David Hyland: In thermodynamics
+2025-12-03, 7:02 a.m. - Mao: Whether you can return to a path?
+2025-12-03, 7:02 a.m. - David Hyland: Yeah
+2025-12-03, 7:03 a.m. - David Hyland: Or how much effort it takes to return
+2025-12-03, 7:03 a.m. - Mao: Right...
+2025-12-03, 7:03 a.m. - Mao: I need to start from scratch
+2025-12-03, 7:03 a.m. - Mao: Well :) that's painful lol
+2025-12-03, 7:03 a.m. - David Hyland: I proposed something like a bounded rationality version of empowerment to Daniel which he seemed to think was sensible
+2025-12-03, 7:03 a.m. - David Hyland: But that doesn't fully capture it either
+2025-12-03, 7:04 a.m. - Mao: Ouh btw will send you the agency paper soon
+2025-12-03, 7:04 a.m. - Mao: Its mostly written
+2025-12-03, 7:04 a.m. - Mao: Waiting on Philip's pass
+2025-12-03, 7:04 a.m. - David Hyland: Let me know what I can do to help :)
+2025-12-03, 7:04 a.m. - Mao: On the agency paper?
+2025-12-03, 7:04 a.m. - Mao: Rn nothing
+2025-12-03, 7:05 a.m. - Mao: Id like help on this thing im trying to figure out now ^^
+2025-12-03, 7:05 a.m. - Mao: I started implementing but I realize it won't work so have yo start from scratch
+2025-12-03, 7:05 a.m. - Mao: Hell conceptualizing is appreciated
+2025-12-03, 7:05 a.m. - David Hyland: Ok, will think about this
+2025-12-03, 7:06 a.m. - David Hyland: I guess my main confusion is on the idea of returnability
+2025-12-03, 7:06 a.m. - Mao: Yeah... same.
+2025-12-03, 7:06 a.m. - David Hyland: Like what do we want to capture by that
+2025-12-03, 7:06 a.m. - Mao: Because otherwise flexibility is fully empowerment
+2025-12-03, 7:06 a.m. - David Hyland: Hmm I don't think so
+2025-12-03, 7:06 a.m. - Mao: You want to capture whether a set of paths steers you far away from others in a way thay makes them no longer achievable
+2025-12-03, 7:07 a.m. - David Hyland: Intuitively you can be flexible by not having very precise preferences, which seems to be compatible with low empowerment
+2025-12-03, 7:07 a.m. - David Hyland: Like monks
