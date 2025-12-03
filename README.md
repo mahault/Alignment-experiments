@@ -15,7 +15,7 @@ Instead, alignment emerges (or fails to emerge) depending on how agents:
 
 The goal is to investigate how these three ingredients interact inside a minimal, transparent, controlled world where we can literally see how belief dynamics give rise to coordination or brittleness.
 
----
+ 
 
 ### 2. Key Concepts
 
@@ -69,7 +69,7 @@ This allows the agent to evaluate:
 
 under each candidate policy.
 
----
+ 
 
 ### 3. Experiment 1
 
@@ -121,7 +121,7 @@ Three classes:
 - sensitivity to preference mismatches
 - stability of coordination
 
----
+ 
 
 ### 4. Roadmap
 
@@ -162,8 +162,4 @@ Three classes:
    - precision asymmetries (power)
    - horizon mismatches (temporal power)
 
----
 
-### 5. Repository Structure
-
-```
