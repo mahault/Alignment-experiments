@@ -249,7 +249,7 @@ Alignment-experiments/
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/Alignment-experiments.git
+git clone https://github.com/mahault/Alignment-experiments.git
 cd Alignment-experiments
 
 # Create conda environment
@@ -419,9 +419,9 @@ If you use this code or build on these ideas, please cite:
 ```bibtex
 @software{path_flexibility_tom_2025,
   title={Path Flexibility, Empathy, and Theory of Mind in Active Inference},
-  author={Your Name},
+  author={Mahault Albarracin},
   year={2025},
-  url={https://github.com/yourusername/Alignment-experiments}
+  url={https://github.com/mahault/Alignment-experiments}
 }
 ```
 
@@ -436,4 +436,4 @@ MIT License - See LICENSE file for details.
 ## Contact
 
 For questions, suggestions, or collaborations:
-- GitHub Issues: [https://github.com/yourusername/Alignment-experiments/issues](https://github.com/yourusername/Alignment-experiments/issues)
+- GitHub Issues: [https://github.com/mahault/Alignment-experiments/issues](https://github.com/mahault/Alignment-experiments/issues)
