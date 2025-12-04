@@ -32,11 +32,15 @@ import jax.random as jr
 import jax.numpy as jnp
 import numpy as np
 
-# TODO: Import when available
-# from src.envs.lava_corridor import LavaCorridorEnv
+# Environment and rollout
+from src.envs import LavaCorridorEnv, LavaCorridorConfig, rollout_exp1
+# from src.envs import build_generative_model_for_env  # For building agent models
+
+# Path flexibility metrics
+from src.metrics.path_flexibility import compute_path_flexibility_for_tree
+
+# TODO: Import ToM agents when available
 # from src.tom.si_tom import ToMAgent, si_policy_search_tom
-# from src.tom.rollout_tom import rollout
-# from src.metrics.path_flexibility import compute_path_flexibility_for_tree
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -90,46 +94,52 @@ def init_env_and_agents(config: Exp1Config):
     """
     LOGGER.info("Initializing environment and agents for Experiment 1")
 
-    # TODO: Replace with actual imports when available
-    # env = LavaCorridorEnv(
-    #     height=config.env_height,
-    #     width=config.env_width,
-    #     slip_prob=config.slip_prob,
+    # Initialize LavaCorridorEnv
+    env_config = LavaCorridorConfig(
+        width=config.env_width,
+        height=3,  # Fixed for lava corridor
+        num_agents=2,
+        slip_prob=config.slip_prob,
+    )
+    env = LavaCorridorEnv(env_config)
+
+    # Get shared "safe" outcomes from environment (for returnability computation)
+    config.shared_outcome_set = env.shared_outcome_obs_indices()
+    LOGGER.info(f"Shared safe outcomes (obs indices): {config.shared_outcome_set}")
+
+    # TODO: Build ToM agents when available
+    # NOTE: In Exp 1, agents use α (empathy) but NOT κ (flexibility prior)
+    #
+    # from src.envs import build_generative_model_for_env
+    #
+    # # Build generative models for each agent
+    # model_0 = build_generative_model_for_env(env, agent_id=0)
+    # model_1 = build_generative_model_for_env(env, agent_id=1)
+    #
+    # # Create PyMDP agents with these models
+    # from pymdp.agent import Agent
+    #
+    # focal_agent = Agent(
+    #     A=model_0["A"],
+    #     B=model_0["B"],
+    #     C=model_0["C"],
+    #     D=model_0["D"],
+    #     # ... ToM-specific parameters
     # )
-
-    # # Get shared "safe" outcomes from environment
-    # config.shared_outcome_set = env.shared_outcomes()
-    # LOGGER.info(f"Shared safe outcomes: {config.shared_outcome_set}")
-
-    # # Build ToM agents
-    # # NOTE: In Exp 1, agents use α (empathy) but NOT κ (flexibility prior)
-    # focal_agent = ToMAgent(
-    #     num_agents=2,
-    #     agent_idx=0,
-    #     alpha=config.alpha_empathy,
-    #     kappa=0.0,  # NO F-prior in Exp 1
-    #     beta=0.0,
-    #     gamma=config.gamma,
-    #     horizon=config.horizon,
-    # )
-
+    #
     # other_agents = [
-    #     ToMAgent(
-    #         num_agents=2,
-    #         agent_idx=1,
-    #         alpha=config.alpha_empathy,
-    #         kappa=0.0,
-    #         beta=0.0,
-    #         gamma=config.gamma,
-    #         horizon=config.horizon,
+    #     Agent(
+    #         A=model_1["A"],
+    #         B=model_1["B"],
+    #         C=model_1["C"],
+    #         D=model_1["D"],
+    #         # ... ToM-specific parameters
     #     )
     # ]
 
-    # STUB for now
-    env = None
+    # STUB for now - agents not implemented yet
     focal_agent = None
-    other_agents = None
-    config.shared_outcome_set = [0, 1, 2]  # placeholder
+    other_agents = [None]
 
     LOGGER.info("Environment and agents initialized")
     return env, focal_agent, other_agents
@@ -175,20 +185,20 @@ def run_single_episode_exp1(
     """
     LOGGER.debug(f"Running episode with key={key}")
 
-    # TODO: Replace with actual rollout when available
-    # 1) Run multi-agent rollout with ToM
-    # last, info, env_after = rollout(
-    #     env=env,
-    #     focal_agent=focal_agent,
-    #     other_agents=other_agents,
-    #     num_timesteps=config.num_timesteps,
-    #     rng_key=key,
-    # )
+    # 1) Run multi-agent rollout with standard ToM (no F-prior)
+    agents = [focal_agent] + other_agents  # Combine into list
+    last, info, env_after = rollout_exp1(
+        env=env,
+        agents=agents,
+        num_timesteps=config.num_timesteps,
+        rng_key=key,
+        alpha_empathy=config.alpha_empathy,
+    )
 
-    # # 2) Extract ToM trees from final timestep
-    # # info["tree"] shape: [T+1, batch_size, ...]
-    # focal_tree_final = info["tree"][-1]
-    # other_trees_final = info["other_tree"][-1]
+    # TODO: Extract ToM trees and compute path flexibility when ToM agents available
+    # 2) Extract ToM trees from rollout info
+    # focal_tree_final = info["trees"][-1][0]  # Last timestep, focal agent
+    # other_tree_final = info["trees"][-1][1]  # Last timestep, other agent
 
     # focal_idx = 0  # focal_agent is agent 0
     # other_idx = 1  # other agent is agent 1
@@ -196,7 +206,7 @@ def run_single_episode_exp1(
     # # 3) Compute path flexibility for all candidate policies in tree
     # metrics_per_policy = compute_path_flexibility_for_tree(
     #     focal_tree=focal_tree_final,
-    #     other_tree=other_trees_final,
+    #     other_tree=other_tree_final,
     #     focal_agent_model=focal_agent,           # Agent's generative model
     #     other_agent_model=other_agents[0],       # Other agent's model
     #     focal_agent_idx=focal_idx,
@@ -206,13 +216,13 @@ def run_single_episode_exp1(
     #     lambdas=(config.lambda_E, config.lambda_R, config.lambda_O),
     # )
 
-    # # 4) Extract episode-level statistics
-    # episode_stats = {
-    #     "collision": bool(info.get("collision", False)),
-    #     "success_i": bool(info.get("success_i", False)),
-    #     "success_j": bool(info.get("success_j", False)),
-    #     "timesteps": int(info.get("timesteps", config.num_timesteps)),
-    # }
+    # 4) Extract episode-level statistics (already computed by rollout)
+    episode_stats = {
+        "collision": info["collision"],
+        "success_i": info["success_i"],
+        "success_j": info["success_j"],
+        "timesteps": info["timesteps"],
+    }
 
     # STUB for now
     metrics_per_policy = [

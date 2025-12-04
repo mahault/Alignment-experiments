@@ -1,290 +1,550 @@
-from __future__ import annotations
+# src/envs/lava_corridor.py
 
-import logging
+"""
+Lava Corridor Environment for Path Flexibility Experiments.
+
+A simple 3-row gridworld:
+- Row 0: Lava (instant death)
+- Row 1: Safe corridor (agents must stay here)
+- Row 2: Lava (instant death)
+
+Two agents start at the left and must reach the goal on the right
+while staying in the safe corridor and avoiding each other.
+"""
+
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, Tuple, Any, List
+import logging
+
 import numpy as np
-import random
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
 
-Position = Tuple[int, int]
+
+# =============================================================================
+# Action Constants
+# =============================================================================
+
+UP = 0
+DOWN = 1
+LEFT = 2
+RIGHT = 3
+STAY = 4
+
+ACTIONS = [UP, DOWN, LEFT, RIGHT, STAY]
+ACTION_NAMES = {
+    UP: "UP",
+    DOWN: "DOWN",
+    LEFT: "LEFT",
+    RIGHT: "RIGHT",
+    STAY: "STAY",
+}
 
 
-class CellType:
-    EMPTY = 0
-    WALL = 1
-    LAVA = 2
-    GOAL_A = 3
-    GOAL_B = 4
-    HELL = 5  # e.g., deadlock / catastrophic collision
-
+# =============================================================================
+# Configuration
+# =============================================================================
 
 @dataclass
-class GridConfig:
-    height: int = 7
-    width: int = 11
-    slip_prob: float = 0.05  # probability of random slip
-    max_steps: int = 50
+class LavaCorridorConfig:
+    """Configuration for Lava Corridor environment."""
+
+    width: int = 7
+    height: int = 3  # Fixed: 3 rows (lava-safe-lava)
+    num_agents: int = 2
+
+    # Optional: stochastic transitions (slip probability)
+    slip_prob: float = 0.0
+
+    # Initial positions (can be overridden)
+    start_positions: Dict[int, Tuple[int, int]] = None
+
+    def __post_init__(self):
+        assert self.height == 3, "LavaCorridorEnv requires exactly 3 rows: lava-safe-lava"
+
+        if self.start_positions is None:
+            # Default: both agents start at left, safe row
+            self.start_positions = {
+                0: (0, 1),  # Agent 0: (x=0, y=1)
+                1: (0, 1),  # Agent 1: (x=0, y=1)
+            }
+
+        LOGGER.info(f"LavaCorridorConfig: width={self.width}, num_agents={self.num_agents}, slip_prob={self.slip_prob}")
+        LOGGER.info(f"  Start positions: {self.start_positions}")
 
 
-class GridWorld:
+# =============================================================================
+# Lava Corridor Environment
+# =============================================================================
+
+class LavaCorridorEnv:
     """
-    Simple multi-agent gridworld with:
-    - Narrow bottleneck
-    - Wider detour
-    - Stochastic slips
-    - Individual goals for agent A and B
+    Lava Corridor Environment.
+
+    Grid Layout:
+        Row 0: LAVA 🔥🔥🔥🔥🔥🔥🔥
+        Row 1: ⬜⬜⬜⬜⬜⬜🎯  (safe corridor + goal)
+        Row 2: LAVA 🔥🔥🔥🔥🔥🔥🔥
+
+    State:
+        - pos[agent_id]: (x, y) position for each agent
+        - t: timestep
+        - done: episode terminated
+        - lava_hit: True if any agent hit lava
+        - success: True if all agents reached goal
+
+    Observations:
+        - Each agent observes its own (x, y) position
+        - Mapped to discrete observation index via pos_to_obs_index()
     """
 
-    ACTIONS = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
-    ACTION_TO_DELTA = {
-        "UP": (-1, 0),
-        "DOWN": (1, 0),
-        "LEFT": (0, -1),
-        "RIGHT": (0, 1),
-        "STAY": (0, 0),
-    }
-
-    def __init__(self, config: Optional[GridConfig] = None):
-        self.config = config or GridConfig()
-        self.grid = self._build_grid()
-        self.agent_ids = ["A", "B"]
-        self.agent_positions: Dict[str, Position] = {}
-        self.t = 0
-        LOGGER.info(f"GridWorld initialized: {self.config.height}x{self.config.width}, slip_prob={self.config.slip_prob}")
-
-    # -------------------------------------------------------------------------
-    # Public API
-    # -------------------------------------------------------------------------
-
-    def reset(self) -> Dict[str, Dict]:
+    def __init__(self, config: LavaCorridorConfig):
         """
-        Reset environment to starting configuration.
-        Returns per-agent observations.
+        Initialize Lava Corridor environment.
+
+        Parameters
+        ----------
+        config : LavaCorridorConfig
+            Environment configuration
         """
-        self.t = 0
-        self.agent_positions = {
-            "A": (3, 1),  # row, col
-            "B": (3, 2),
+        self.config = config
+
+        # Environment dimensions
+        self.width = config.width
+        self.height = config.height
+        self.num_agents = config.num_agents
+
+        # Start and goal
+        self.start_positions = config.start_positions
+        self.goal_x = config.width - 1
+        self.safe_y = 1  # Middle row is safe
+
+        # State
+        self.state = None
+
+        LOGGER.info("=" * 80)
+        LOGGER.info("Lava Corridor Environment Initialized")
+        LOGGER.info("=" * 80)
+        LOGGER.info(f"Grid: {self.width}x{self.height} (width x height)")
+        LOGGER.info(f"Safe row: y={self.safe_y}")
+        LOGGER.info(f"Goal: x={self.goal_x}, y={self.safe_y}")
+        LOGGER.info(f"Num agents: {self.num_agents}")
+        LOGGER.info(f"Start positions: {self.start_positions}")
+        LOGGER.info(f"Slip probability: {self.config.slip_prob}")
+        LOGGER.info("=" * 80)
+
+    # =========================================================================
+    # Core API
+    # =========================================================================
+
+    def reset(self, rng_key: Any = None) -> Tuple[Dict, Dict[int, Tuple[int, int]]]:
+        """
+        Reset environment to initial state.
+
+        Parameters
+        ----------
+        rng_key : Any, optional
+            Random key (unused for now, for JAX compatibility)
+
+        Returns
+        -------
+        state : Dict
+            Internal state dict with keys:
+            - pos: {agent_id: (x, y)}
+            - t: timestep
+            - done: episode terminated
+            - lava_hit: any agent hit lava
+            - success: all agents reached goal
+        obs : Dict[int, Tuple[int, int]]
+            Per-agent observations (positions)
+        """
+        LOGGER.info("Resetting environment")
+
+        self.state = {
+            "pos": {aid: self.start_positions[aid] for aid in range(self.num_agents)},
+            "t": 0,
+            "done": False,
+            "lava_hit": False,
+            "success": False,
+            "collision": False,
         }
-        LOGGER.info(f"Environment reset. Agent positions: {self.agent_positions}")
-        return self._get_observations()
+
+        obs = {aid: self.state["pos"][aid] for aid in range(self.num_agents)}
+
+        LOGGER.info(f"Reset complete: t=0")
+        for aid in range(self.num_agents):
+            pos = self.state["pos"][aid]
+            LOGGER.info(f"  Agent {aid}: position={pos}, obs_idx={self.pos_to_obs_index(pos)}")
+
+        return self.state, obs
 
     def step(
         self,
-        actions: Dict[str, str],
-    ) -> Tuple[Dict[str, Dict], Dict[str, float], Dict[str, bool], bool, Dict]:
+        state: Dict,
+        actions: Dict[int, int],
+        rng_key: Any = None,
+    ) -> Tuple[Dict, Dict[int, Tuple[int, int]], bool, Dict]:
         """
-        actions: dict mapping agent_id -> action string
-        Returns:
-            observations: dict agent_id -> obs dict
-            rewards: dict agent_id -> float
-            dones: dict agent_id -> bool
-            done_global: bool
-            info: dict with debug data
+        Take one environment step.
+
+        Parameters
+        ----------
+        state : Dict
+            Current state
+        actions : Dict[int, int]
+            Actions per agent {agent_id: action_index}
+        rng_key : Any, optional
+            Random key for stochastic transitions
+
+        Returns
+        -------
+        new_state : Dict
+            Updated state
+        obs : Dict[int, Tuple[int, int]]
+            Per-agent observations
+        done : bool
+            Episode terminated
+        info : Dict
+            Additional info (lava_hit, success, collision, etc.)
         """
-        self.t += 1
-        LOGGER.debug(f"Step {self.t}: Actions={actions}")
+        if state.get("done", False):
+            LOGGER.debug("Episode already done, returning current state")
+            obs = {aid: state["pos"][aid] for aid in range(self.num_agents)}
+            return state, obs, True, state
 
-        proposed = {
-            aid: self._apply_action_with_slip(aid, actions.get(aid, "STAY"))
-            for aid in self.agent_ids
-        }
-        LOGGER.debug(f"  Proposed positions (after slip): {proposed}")
+        t = state["t"]
+        LOGGER.debug(f"Step t={t}: actions={actions}")
 
-        # resolve walls and bounds
-        proposed = {
-            aid: self._clip_to_valid(pos, self.agent_positions[aid])
-            for aid, pos in proposed.items()
-        }
-        LOGGER.debug(f"  Valid positions (after clipping): {proposed}")
+        new_state = dict(state)
+        new_pos = {}
 
-        # handle collisions
-        new_positions, collision_pairs = self._resolve_collisions(proposed)
-        if collision_pairs:
-            LOGGER.warning(f"  Collision detected: {collision_pairs}")
+        # 1. Move each agent independently
+        for aid in range(self.num_agents):
+            x, y = state["pos"][aid]
+            a = actions.get(aid, STAY)
 
-        self.agent_positions = new_positions
+            old_pos = (x, y)
 
-        rewards, dones, info = self._compute_rewards_and_dones(collision_pairs)
-        LOGGER.debug(f"  Rewards: {rewards}, Dones: {dones}")
-
-        obs = self._get_observations()
-        done_global = all(dones.values()) or self.t >= self.config.max_steps
-
-        info["collision_pairs"] = collision_pairs
-        info["t"] = self.t
-
-        if done_global:
-            LOGGER.info(f"Episode finished at step {self.t}. Final info: {info}")
-
-        return obs, rewards, dones, done_global, info
-
-    # -------------------------------------------------------------------------
-    # Internal grid construction
-    # -------------------------------------------------------------------------
-
-    def _build_grid(self) -> np.ndarray:
-        """
-        Build a fixed layout:
-        - Start area on the left
-        - Narrow bottleneck in middle
-        - Wider detour path above/below
-        - Goals on the right
-        """
-        H, W = self.config.height, self.config.width
-        grid = np.full((H, W), CellType.EMPTY, dtype=int)
-
-        # Add outer walls
-        grid[0, :] = CellType.WALL
-        grid[-1, :] = CellType.WALL
-        grid[:, 0] = CellType.WALL
-        grid[:, -1] = CellType.WALL
-
-        # Vertical walls with one-cell bottleneck
-        mid_col = W // 2
-        for r in range(1, H - 1):
-            # Leave a bottleneck at row 3 (zero-indexed)
-            if r == H // 2:
-                continue
-            grid[r, mid_col] = CellType.WALL
-
-        # Optional lava around bottleneck (just as an example)
-        bottleneck_row = H // 2
-        lava_cols = [mid_col - 1, mid_col + 1]
-        for c in lava_cols:
-            if 0 < bottleneck_row < H - 1 and 0 < c < W - 1:
-                grid[bottleneck_row, c] = CellType.LAVA
-
-        # Goals for A and B on far right
-        grid[bottleneck_row - 1, W - 2] = CellType.GOAL_A
-        grid[bottleneck_row + 1, W - 2] = CellType.GOAL_B
-
-        return grid
-
-    # -------------------------------------------------------------------------
-    # Helpers
-    # -------------------------------------------------------------------------
-
-    def _apply_action_with_slip(self, agent_id: str, action: str) -> Position:
-        """
-        Apply intended action with stochastic slip.
-        """
-        assert action in self.ACTIONS, f"Unknown action: {action}"
-        pos = self.agent_positions[agent_id]
-        original_action = action
-
-        if random.random() < self.config.slip_prob:
-            # slip to a random other action (except STAY to keep it interesting)
-            candidate_actions = [a for a in self.ACTIONS if a != "STAY"]
-            action = random.choice(candidate_actions)
-            LOGGER.debug(f"    Agent {agent_id} slipped: {original_action} -> {action}")
-
-        dx, dy = self.ACTION_TO_DELTA[action]
-        return (pos[0] + dx, pos[1] + dy)
-
-    def _clip_to_valid(self, proposed: Position, fallback: Position) -> Position:
-        """
-        Enforce bounds and wall constraints.
-        """
-        r, c = proposed
-        H, W = self.config.height, self.config.width
-
-        if r < 0 or r >= H or c < 0 or c >= W:
-            return fallback
-        cell = self.grid[r, c]
-        if cell == CellType.WALL:
-            return fallback
-        return proposed
-
-    def _resolve_collisions(
-        self,
-        proposed: Dict[str, Position],
-    ) -> Tuple[Dict[str, Position], List[Tuple[str, str]]]:
-        """
-        If agents try to enter the same cell (or swap), treat as collision.
-        """
-        new_positions = self.agent_positions.copy()
-        collision_pairs: List[Tuple[str, str]] = []
-
-        # Simple rule: if both propose same cell, that cell becomes HELL and both are placed there.
-        pos_to_agents: Dict[Position, List[str]] = {}
-        for aid, pos in proposed.items():
-            pos_to_agents.setdefault(pos, []).append(aid)
-
-        for pos, agents_here in pos_to_agents.items():
-            if len(agents_here) == 1:
-                aid = agents_here[0]
-                new_positions[aid] = pos
+            # Apply action with deterministic physics
+            if a == UP:
+                y = max(0, y - 1)
+            elif a == DOWN:
+                y = min(self.height - 1, y + 1)
+            elif a == LEFT:
+                x = max(0, x - 1)
+            elif a == RIGHT:
+                x = min(self.width - 1, x + 1)
+            elif a == STAY:
+                pass
             else:
-                # collision: everyone moves into a HELL cell at that pos
-                for aid in agents_here:
-                    new_positions[aid] = pos
-                collision_pairs.extend(
-                    [(agents_here[i], agents_here[j])
-                     for i in range(len(agents_here))
-                     for j in range(i + 1, len(agents_here))]
-                )
+                LOGGER.warning(f"Agent {aid}: unknown action {a}, treating as STAY")
 
-        return new_positions, collision_pairs
+            # Apply slip (if slip_prob > 0 and rng_key provided)
+            # TODO: Implement stochastic transitions if needed
 
-    def _compute_rewards_and_dones(
-        self,
-        collision_pairs: List[Tuple[str, str]],
-    ) -> Tuple[Dict[str, float], Dict[str, bool], Dict]:
-        rewards = {aid: -0.1 for aid in self.agent_ids}  # step cost
-        dones = {aid: False for aid in self.agent_ids}
-        info: Dict = {}
+            new_pos[aid] = (x, y)
 
-        # collisions -> HELL
-        if collision_pairs:
-            for aid in self.agent_ids:
-                pos = self.agent_positions[aid]
-                r, c = pos
-                # mark cell as HELL
-                self.grid[r, c] = CellType.HELL
-                rewards[aid] -= 10.0
-                dones[aid] = True
-            info["event"] = "collision"
-            return rewards, dones, info
+            action_name = ACTION_NAMES.get(a, "UNKNOWN")
+            LOGGER.debug(f"  Agent {aid}: {old_pos} --[{action_name}]--> {new_pos[aid]}")
 
-        for aid in self.agent_ids:
-            pos = self.agent_positions[aid]
-            r, c = pos
-            cell = self.grid[r, c]
+        # 2. Check lava / collision / goal / done conditions
+        lava_hit = False
+        collision = False
+        success = True
 
-            if cell == CellType.LAVA:
-                rewards[aid] -= 8.0
-                dones[aid] = True
-                info[f"event_{aid}"] = "lava"
-            elif aid == "A" and cell == CellType.GOAL_A:
-                rewards[aid] += 5.0
-                dones[aid] = True
-                info[f"event_{aid}"] = "goal"
-            elif aid == "B" and cell == CellType.GOAL_B:
-                rewards[aid] += 5.0
-                dones[aid] = True
-                info[f"event_{aid}"] = "goal"
+        # Check lava
+        for aid, (x, y) in new_pos.items():
+            if y != self.safe_y:  # Row 0 or 2 -> lava
+                lava_hit = True
+                LOGGER.warning(f"  Agent {aid} hit LAVA at {(x, y)}!")
 
-        return rewards, dones, info
+        # Check collision (both agents in same cell)
+        if self.num_agents == 2:
+            pos_0 = new_pos[0]
+            pos_1 = new_pos[1]
+            if pos_0 == pos_1:
+                collision = True
+                LOGGER.warning(f"  COLLISION: Both agents at {pos_0}!")
 
-    def _get_observations(self) -> Dict[str, Dict]:
+        # Check goal (all agents must reach goal)
+        for aid, (x, y) in new_pos.items():
+            if not (x == self.goal_x and y == self.safe_y):
+                success = False
+
+        if success:
+            LOGGER.info(f"  SUCCESS: All agents reached goal at t={t+1}!")
+
+        # Update state
+        new_state["pos"] = new_pos
+        new_state["t"] = t + 1
+        new_state["lava_hit"] = lava_hit
+        new_state["collision"] = collision
+        new_state["success"] = success
+        new_state["done"] = bool(lava_hit or success)
+
+        obs = {aid: new_pos[aid] for aid in range(self.num_agents)}
+
+        info = {
+            "lava_hit": lava_hit,
+            "collision": collision,
+            "success": success,
+            "success_i": (new_pos[0][0] == self.goal_x and new_pos[0][1] == self.safe_y) if self.num_agents > 0 else False,
+            "success_j": (new_pos[1][0] == self.goal_x and new_pos[1][1] == self.safe_y) if self.num_agents > 1 else False,
+            "t": new_state["t"],
+            "timesteps": new_state["t"],
+        }
+
+        LOGGER.debug(f"Step complete: t={new_state['t']}, done={new_state['done']}, info={info}")
+
+        return new_state, obs, new_state["done"], info
+
+    # =========================================================================
+    # Shared Outcomes for Path Flexibility
+    # =========================================================================
+
+    def shared_outcomes(self) -> List[Tuple[int, int]]:
         """
-        For now, give each agent:
-        - its own position
-        - the local cell type
-        - positions of all agents (for ToM; can be coarsened later)
+        Return list of 'shared outcome' positions for returnability computation.
+
+        Shared outcomes = safe corridor cells (y=1) that both agents can reach.
+
+        Returns
+        -------
+        outcomes : List[Tuple[int, int]]
+            List of (x, y) positions in safe corridor
         """
-        obs = {}
-        for aid in self.agent_ids:
-            pos = self.agent_positions[aid]
-            r, c = pos
-            cell = self.grid[r, c]
-            obs[aid] = {
-                "self_pos": pos,
-                "cell_type": int(cell),
-                "all_positions": self.agent_positions.copy(),
-            }
-        return obs
+        outcomes = []
+        for x in range(self.width):
+            outcomes.append((x, self.safe_y))
+
+        LOGGER.debug(f"Shared outcomes (positions): {outcomes}")
+        return outcomes
+
+    def pos_to_obs_index(self, pos: Tuple[int, int]) -> int:
+        """
+        Map (x, y) position to discrete observation index.
+
+        Flattening: obs_idx = y * width + x
+
+        Parameters
+        ----------
+        pos : Tuple[int, int]
+            (x, y) position
+
+        Returns
+        -------
+        obs_idx : int
+            Observation index
+        """
+        x, y = pos
+        obs_idx = y * self.width + x
+        return obs_idx
+
+    def obs_index_to_pos(self, obs_idx: int) -> Tuple[int, int]:
+        """
+        Map observation index to (x, y) position.
+
+        Inverse of pos_to_obs_index.
+
+        Parameters
+        ----------
+        obs_idx : int
+            Observation index
+
+        Returns
+        -------
+        pos : Tuple[int, int]
+            (x, y) position
+        """
+        y = obs_idx // self.width
+        x = obs_idx % self.width
+        return (x, y)
+
+    def shared_outcome_obs_indices(self) -> List[int]:
+        """
+        Return shared outcomes as observation indices (for generative model).
+
+        Returns
+        -------
+        obs_indices : List[int]
+            List of observation indices corresponding to safe corridor
+        """
+        positions = self.shared_outcomes()
+        obs_indices = [self.pos_to_obs_index(p) for p in positions]
+
+        LOGGER.debug(f"Shared outcomes (obs indices): {obs_indices}")
+        return obs_indices
+
+    # =========================================================================
+    # Utilities
+    # =========================================================================
+
+    def render(self, state: Dict = None) -> str:
+        """
+        Render environment state as ASCII art.
+
+        Parameters
+        ----------
+        state : Dict, optional
+            State to render (default: self.state)
+
+        Returns
+        -------
+        render_str : str
+            ASCII representation
+        """
+        if state is None:
+            state = self.state
+
+        if state is None:
+            return "Environment not initialized (call reset first)"
+
+        grid = []
+        for y in range(self.height):
+            row = []
+            for x in range(self.width):
+                cell = "."
+
+                # Mark lava
+                if y != self.safe_y:
+                    cell = "🔥"
+
+                # Mark goal
+                if x == self.goal_x and y == self.safe_y:
+                    cell = "🎯"
+
+                # Mark agents
+                for aid in range(self.num_agents):
+                    if state["pos"][aid] == (x, y):
+                        cell = str(aid)
+
+                row.append(cell)
+            grid.append(" ".join(row))
+
+        header = f"t={state['t']} | Lava: {state['lava_hit']} | Success: {state['success']}"
+        return header + "\n" + "\n".join(grid)
+
+    def get_num_states(self) -> int:
+        """Total number of states (width * height)."""
+        return self.width * self.height
+
+    def get_num_observations(self) -> int:
+        """Total number of observations (same as states for fully observable)."""
+        return self.get_num_states()
+
+    def get_num_actions(self) -> int:
+        """Number of actions per agent."""
+        return len(ACTIONS)
+
+
+# =============================================================================
+# Generative Model Builder
+# =============================================================================
+
+def build_generative_model_for_env(
+    env: LavaCorridorEnv,
+    agent_id: int = 0,
+) -> Dict[str, np.ndarray]:
+    """
+    Build a generative model (A, B, C, D) consistent with LavaCorridorEnv.
+
+    This creates a simple single-agent model where:
+    - States: (x, y) positions flattened to s = y * width + x
+    - Observations: same as states (fully observable)
+    - Actions: UP, DOWN, LEFT, RIGHT, STAY
+    - Preferences: high for goal, neutral for safe corridor, low for lava
+
+    Parameters
+    ----------
+    env : LavaCorridorEnv
+        Environment instance
+    agent_id : int
+        Agent ID (for logging purposes)
+
+    Returns
+    -------
+    model : Dict[str, np.ndarray]
+        Generative model with keys:
+        - A: observation likelihood [num_obs, num_states]
+        - B: transition dynamics [num_actions, num_states, num_states]
+        - C: log preferences [num_obs]
+        - D: initial state prior [num_states]
+        - policies: list of action sequences (not implemented yet)
+    """
+    LOGGER.info(f"Building generative model for agent {agent_id}")
+
+    num_states = env.get_num_states()
+    num_obs = env.get_num_observations()
+    num_actions = env.get_num_actions()
+
+    LOGGER.info(f"  num_states={num_states}, num_obs={num_obs}, num_actions={num_actions}")
+
+    # A: observation likelihood (fully observable, identity)
+    A = np.eye(num_obs, num_states)
+    LOGGER.debug(f"  A matrix: shape={A.shape}")
+
+    # B: transition dynamics
+    B = np.zeros((num_actions, num_states, num_states))
+
+    for s in range(num_states):
+        x, y = env.obs_index_to_pos(s)
+
+        for a in range(num_actions):
+            # Compute next position given action
+            x_next, y_next = x, y
+
+            if a == UP:
+                y_next = max(0, y - 1)
+            elif a == DOWN:
+                y_next = min(env.height - 1, y + 1)
+            elif a == LEFT:
+                x_next = max(0, x - 1)
+            elif a == RIGHT:
+                x_next = min(env.width - 1, x + 1)
+            elif a == STAY:
+                pass
+
+            s_next = env.pos_to_obs_index((x_next, y_next))
+            B[a, s_next, s] = 1.0
+
+    LOGGER.debug(f"  B matrix: shape={B.shape}")
+
+    # C: log preferences
+    C = np.zeros(num_obs)
+
+    for o in range(num_obs):
+        x, y = env.obs_index_to_pos(o)
+
+        if y != env.safe_y:
+            # Lava: very low preference
+            C[o] = 0.01
+        elif x == env.goal_x and y == env.safe_y:
+            # Goal: high preference
+            C[o] = 10.0
+        else:
+            # Safe corridor: neutral
+            C[o] = 1.0
+
+    # Normalize to log space
+    C = np.log(C + 1e-16)
+    LOGGER.debug(f"  C (log preferences): shape={C.shape}, range=[{C.min():.2f}, {C.max():.2f}]")
+
+    # D: initial state prior (uniform over start position)
+    D = np.zeros(num_states)
+    start_pos = env.start_positions[agent_id]
+    start_s = env.pos_to_obs_index(start_pos)
+    D[start_s] = 1.0
+
+    LOGGER.debug(f"  D (initial prior): shape={D.shape}, start_s={start_s} (pos={start_pos})")
+
+    model = {
+        "A": A,
+        "B": B,
+        "C": C,
+        "D": D,
+        "policies": [],  # TODO: enumerate policies
+    }
+
+    LOGGER.info(f"Generative model built for agent {agent_id}")
+    return model

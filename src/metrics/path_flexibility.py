@@ -401,11 +401,27 @@ def root_idx(tree: Any) -> int:
     """
     Find the root node index of the ToM tree.
 
-    This is typically stored in the tree structure or is node 0.
+    Based on tom/planning/si_tom.py implementation.
+    Root is identified as the node that is:
+    - used
+    - has horizon == 0
+    - has a valid observation (not all -1)
     """
-    # TODO: Adjust based on actual tree structure
-    # For now assume root is at index 0
-    return 0
+    import jax.numpy as jnp
+
+    # Simple version for non-multi-agent trees
+    if hasattr(tree, 'horizon') and hasattr(tree, 'used'):
+        root_idx = jnp.argwhere(
+            (tree.used)[:, 0]
+            & (tree.horizon == 0)[:, 0]
+            & ~jnp.all(tree.observation == -1, axis=-1),
+            size=1,
+            fill_value=-1,
+        )[0, 0]
+        return int(root_idx)
+    else:
+        # Fallback: assume root is at index 0
+        return 0
 
 
 def get_root_policy_nodes(tree: Any, focal_agent_idx: int) -> List[int]:
@@ -455,22 +471,171 @@ def get_root_policy_nodes(tree: Any, focal_agent_idx: int) -> List[int]:
     return valid_nodes
 
 
-def predict_obs_dist(agent_model: Any, policy_id: int, t: int) -> np.ndarray:
+def get_policy_action(policy_id: int, t: int, policy_library: Any) -> int:
+    """
+    Returns the primitive action index at time t for the given policy_id.
+
+    Parameters
+    ----------
+    policy_id : int
+        Index of policy
+    t : int
+        Timestep
+    policy_library : Any
+        List/array of action sequences (e.g., agent_model.policies)
+
+    Returns
+    -------
+    action : int
+        Action index at timestep t
+    """
+    policy = policy_library[policy_id]
+    return int(policy[t] if t < len(policy) else policy[-1])
+
+
+def rollout_beliefs_and_obs(
+    policy_id: int,
+    model: Any,
+    horizon: int,
+    current_qs: np.ndarray = None,
+) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+    """
+    Rollout beliefs and observations under a policy.
+
+    This is the CLEAN API for forward simulation:
+    - Takes a policy_id and model
+    - Returns q_s_over_time and p_o_over_time
+
+    Parameters
+    ----------
+    policy_id : int
+        Index of policy in model.policies
+    model : Any
+        Agent's generative model with:
+        - A: [num_obs, num_states] observation likelihood
+        - B: [num_states, num_states, num_actions] or [num_actions, num_states, num_states]
+        - D: [num_states] initial state prior
+        - policies: list of action sequences
+    horizon : int
+        Number of timesteps to simulate
+    current_qs : np.ndarray, optional
+        Initial belief state (if None, uses model.D)
+
+    Returns
+    -------
+    q_s_over_time : List[np.ndarray]
+        Belief states over time [q_s(0), q_s(1), ..., q_s(H-1)]
+    p_o_over_time : List[np.ndarray]
+        Observation distributions over time [p(o_0|π), p(o_1|π), ..., p(o_{H-1}|π)]
+    """
+    # Extract model components
+    A = model.A[0] if isinstance(model.A, list) else model.A
+    B_raw = model.B[0] if isinstance(model.B, list) else model.B
+    D = model.D[0] if isinstance(model.D, list) else model.D
+    policy_library = model.policies if hasattr(model, 'policies') else []
+
+    # Normalize B to [num_actions, num_states, num_states] if needed
+    if len(B_raw.shape) == 3:
+        # Check if it's [num_states, num_states, num_actions] or [num_actions, num_states, num_states]
+        # Heuristic: if B_raw.shape[0] == B_raw.shape[1], assume [num_states, num_states, num_actions]
+        if B_raw.shape[0] == B_raw.shape[1] and B_raw.shape[2] < B_raw.shape[0]:
+            # Transpose to [num_actions, num_states, num_states]
+            B = np.transpose(B_raw, (2, 0, 1))
+        else:
+            B = B_raw
+    else:
+        raise ValueError(f"B must be 3D, got shape {B_raw.shape}")
+
+    # Initial belief
+    if current_qs is None:
+        q_s = D / (D.sum() + 1e-12)
+    else:
+        q_s = current_qs / (current_qs.sum() + 1e-12)
+
+    q_s_over_time = []
+    p_o_over_time = []
+
+    for t in range(horizon):
+        # Get action at timestep t
+        a_t = get_policy_action(policy_id, t, policy_library)
+
+        # Predict next state: q_s = B[a_t] @ q_s
+        q_s = B[a_t] @ q_s
+        q_s = q_s / (q_s.sum() + 1e-12)
+        q_s_over_time.append(q_s)
+
+        # Predict observations: p_o = A @ q_s
+        p_o = A @ q_s
+        p_o = p_o / (p_o.sum() + 1e-12)
+        p_o_over_time.append(p_o)
+
+    return q_s_over_time, p_o_over_time
+
+
+def predict_obs_dist(agent_model: Any, policy_id: int, t: int, current_qs: np.ndarray = None) -> np.ndarray:
     """
     Predict observation distribution p(o_t | π) at timestep t.
 
-    TODO: Implement based on actual agent model structure.
-    This should use the generative model (A, B matrices) to forward-simulate.
+    Uses the generative model (A, B matrices) to forward-simulate.
+
+    Parameters
+    ----------
+    agent_model : Any
+        Agent's generative model with A, B matrices and policies
+    policy_id : int
+        Index of policy in agent_model.policies
+    t : int
+        Timestep to predict
+    current_qs : np.ndarray, optional
+        Current belief state (if None, uses agent_model.D)
+
+    Returns
+    -------
+    p_o_t : np.ndarray
+        Predicted observation distribution [num_obs]
     """
-    # Placeholder implementation
-    num_obs = agent_model.A[0].shape[0] if hasattr(agent_model, 'A') else 10
-    return np.ones(num_obs) / num_obs
+    # Get current belief state
+    if current_qs is None:
+        if hasattr(agent_model, 'D'):
+            qs = agent_model.D[0] if isinstance(agent_model.D, list) else agent_model.D
+        else:
+            # Uniform prior
+            num_states = agent_model.B[0].shape[0] if hasattr(agent_model, 'B') else 10
+            qs = np.ones(num_states) / num_states
+    else:
+        qs = current_qs
+
+    # Forward-simulate belief state to timestep t using policy
+    if hasattr(agent_model, 'policies') and hasattr(agent_model, 'B'):
+        policy = agent_model.policies[policy_id]
+        B = agent_model.B[0] if isinstance(agent_model.B, list) else agent_model.B
+
+        # Simulate forward for t timesteps
+        for tau in range(t + 1):
+            action = policy[tau] if tau < len(policy) else policy[-1]
+            # Transition: qs_next = B[:, :, action] @ qs
+            if len(B.shape) == 3:
+                qs = B[:, :, action] @ qs
+                qs = qs / (qs.sum() + 1e-12)
+
+    # Compute expected observation: p(o) = A @ qs
+    if hasattr(agent_model, 'A'):
+        A = agent_model.A[0] if isinstance(agent_model.A, list) else agent_model.A
+        p_o_t = A @ qs
+        p_o_t = p_o_t / (p_o_t.sum() + 1e-12)
+    else:
+        # Fallback: uniform distribution
+        num_obs = 10
+        p_o_t = np.ones(num_obs) / num_obs
+
+    return p_o_t
 
 
 def simulate_policy_and_compute_rollout_dists(
     policy_id: int,
     agent_model: Any,
     horizon: int,
+    current_qs: np.ndarray = None,
 ) -> List[np.ndarray]:
     """
     Given a policy identifier (e.g. index into agent_model.policies),
@@ -484,6 +649,8 @@ def simulate_policy_and_compute_rollout_dists(
         Agent's generative model with A, B matrices and policies
     horizon : int
         Number of timesteps to simulate
+    current_qs : np.ndarray, optional
+        Current belief state (if None, uses agent_model.D)
 
     Returns
     -------
@@ -494,10 +661,34 @@ def simulate_policy_and_compute_rollout_dists(
 
     for t in range(horizon):
         # Predict observation distribution at timestep t
-        p_o_t = predict_obs_dist(agent_model, policy_id, t)
+        p_o_t = predict_obs_dist(agent_model, policy_id, t, current_qs)
         p_obs_over_time.append(p_o_t)
 
     return p_obs_over_time
+
+
+def approximate_EFE_risk_only(p_o_t: np.ndarray, C: np.ndarray) -> float:
+    """
+    Approximate EFE contribution at a single timestep (risk-only).
+
+    EFE_t ≈ E_{p(o)}[-log C(o)] = sum p(o) * (-log C(o))
+
+    Parameters
+    ----------
+    p_o_t : np.ndarray
+        Predicted observation distribution [num_obs]
+    C : np.ndarray
+        Preference vector over observations [num_obs]
+
+    Returns
+    -------
+    G_t : float
+        EFE contribution at timestep t
+    """
+    eps = 1e-16
+    C_safe = np.clip(C, eps, 1.0)
+    G_t = np.sum(p_o_t * (-np.log(C_safe)))
+    return float(G_t)
 
 
 def approximate_EFE_step(p_o_t: np.ndarray, preferences_C: np.ndarray) -> float:
@@ -506,12 +697,9 @@ def approximate_EFE_step(p_o_t: np.ndarray, preferences_C: np.ndarray) -> float:
 
     Simplified version: G_t ≈ -E[log C(o)]
 
-    TODO: Full EFE includes epistemic and pragmatic terms.
+    This is an alias for approximate_EFE_risk_only for backward compatibility.
     """
-    # Risk term: expected negative log preference
-    log_C = np.log(preferences_C + 1e-12)
-    G_t = -np.sum(p_o_t * log_C)
-    return float(G_t)
+    return approximate_EFE_risk_only(p_o_t, preferences_C)
 
 
 def compute_EFE_from_rollout(
@@ -542,23 +730,84 @@ def compute_EFE_from_rollout(
     return float(G)
 
 
-def get_p_o_given_a(agent_model: Any, policy_id: int, t: int) -> np.ndarray:
+def get_p_o_given_a(agent_model: Any, policy_id: int, t: int, current_qs: np.ndarray = None) -> np.ndarray:
     """
     Get p(o | a) for empowerment computation at timestep t.
 
-    TODO: Implement based on actual agent model structure.
-    Should return [num_actions, num_obs] array.
+    Computes the transition matrix [num_actions, num_obs] where each row
+    is p(o | a_i) for action i.
+
+    Parameters
+    ----------
+    agent_model : Any
+        Agent's generative model with A, B matrices
+    policy_id : int
+        Index of policy (used to forward-simulate to timestep t)
+    t : int
+        Timestep to compute transitions at
+    current_qs : np.ndarray, optional
+        Current belief state (if None, uses agent_model.D)
+
+    Returns
+    -------
+    p_o_given_a : np.ndarray
+        Array of shape [num_actions, num_obs]
     """
-    # Placeholder: return uniform distribution
-    num_actions = 4  # TODO: extract from model
-    num_obs = agent_model.A[0].shape[0] if hasattr(agent_model, 'A') else 10
-    return np.ones((num_actions, num_obs)) / num_obs
+    # Get belief state at timestep t
+    if current_qs is None:
+        if hasattr(agent_model, 'D'):
+            qs = agent_model.D[0] if isinstance(agent_model.D, list) else agent_model.D
+        else:
+            num_states = agent_model.B[0].shape[0] if hasattr(agent_model, 'B') else 10
+            qs = np.ones(num_states) / num_states
+    else:
+        qs = current_qs
+
+    # Forward-simulate to timestep t if needed
+    if t > 0 and hasattr(agent_model, 'policies') and hasattr(agent_model, 'B'):
+        policy = agent_model.policies[policy_id]
+        B = agent_model.B[0] if isinstance(agent_model.B, list) else agent_model.B
+
+        for tau in range(t):
+            action = policy[tau] if tau < len(policy) else policy[-1]
+            if len(B.shape) == 3:
+                qs = B[:, :, action] @ qs
+                qs = qs / (qs.sum() + 1e-12)
+
+    # Now compute p(o | a) for all actions
+    if hasattr(agent_model, 'A') and hasattr(agent_model, 'B'):
+        A = agent_model.A[0] if isinstance(agent_model.A, list) else agent_model.A
+        B = agent_model.B[0] if isinstance(agent_model.B, list) else agent_model.B
+
+        num_actions = B.shape[2] if len(B.shape) == 3 else 1
+        num_obs = A.shape[0]
+
+        p_o_given_a = np.zeros((num_actions, num_obs))
+
+        for a in range(num_actions):
+            # Next state distribution: qs_next = B[:, :, a] @ qs
+            qs_next = B[:, :, a] @ qs
+            qs_next = qs_next / (qs_next.sum() + 1e-12)
+
+            # Observation distribution: p(o | a) = A @ qs_next
+            p_o_given_a[a] = A @ qs_next
+
+        # Normalize each row
+        p_o_given_a = p_o_given_a / (p_o_given_a.sum(axis=1, keepdims=True) + 1e-12)
+    else:
+        # Fallback: uniform distribution
+        num_actions = 4
+        num_obs = 10
+        p_o_given_a = np.ones((num_actions, num_obs)) / num_obs
+
+    return p_o_given_a
 
 
 def compute_empowerment_along_rollout(
     agent_model: Any,
     policy_id: int,
-    horizon: int
+    horizon: int,
+    current_qs: np.ndarray = None,
 ) -> float:
     """
     Compute average empowerment along a policy rollout.
@@ -574,6 +823,8 @@ def compute_empowerment_along_rollout(
         Index of policy
     horizon : int
         Planning horizon
+    current_qs : np.ndarray, optional
+        Initial belief state
 
     Returns
     -------
@@ -582,13 +833,61 @@ def compute_empowerment_along_rollout(
     """
     from .empowerment import estimate_empowerment_one_step
 
+    # Use clean rollout API to get belief states over time
+    q_s_over_time, _ = rollout_beliefs_and_obs(policy_id, agent_model, horizon, current_qs)
+
     E_t = []
-    for t in range(horizon):
-        # Build p(o_{t+1} | a_t) given current belief and model
-        p_o_given_a = get_p_o_given_a(agent_model, policy_id, t)
+    for q_s_t in q_s_over_time:
+        # Compute p(o | a) at this timestep
+        p_o_given_a = get_p_o_given_a_at_t(agent_model, q_s_t)
         E_t.append(estimate_empowerment_one_step(p_o_given_a))
 
-    return float(np.mean(E_t))
+    return float(np.mean(E_t)) if E_t else 0.0
+
+
+def get_p_o_given_a_at_t(model: Any, q_s_t: np.ndarray) -> np.ndarray:
+    """
+    Get p(o | a) for empowerment computation at a specific belief state.
+
+    p(o | a) = A @ B[a] @ q_s_t
+
+    Parameters
+    ----------
+    model : Any
+        Agent's generative model with A, B matrices
+    q_s_t : np.ndarray
+        Belief state at timestep t
+
+    Returns
+    -------
+    p_o_given_a : np.ndarray
+        Array of shape [num_actions, num_obs]
+    """
+    A = model.A[0] if isinstance(model.A, list) else model.A
+    B_raw = model.B[0] if isinstance(model.B, list) else model.B
+
+    # Normalize B to [num_actions, num_states, num_states]
+    if len(B_raw.shape) == 3:
+        if B_raw.shape[0] == B_raw.shape[1] and B_raw.shape[2] < B_raw.shape[0]:
+            B = np.transpose(B_raw, (2, 0, 1))
+        else:
+            B = B_raw
+    else:
+        raise ValueError(f"B must be 3D, got shape {B_raw.shape}")
+
+    num_actions = B.shape[0]
+    num_obs = A.shape[0]
+    p_o_given_a = np.zeros((num_actions, num_obs))
+
+    for a in range(num_actions):
+        q_s_next = B[a] @ q_s_t
+        q_s_next = q_s_next / (q_s_next.sum() + 1e-12)
+        p_o = A @ q_s_next
+        p_o_given_a[a, :] = p_o
+
+    # Normalize rows
+    p_o_given_a = p_o_given_a / (p_o_given_a.sum(axis=1, keepdims=True) + 1e-12)
+    return p_o_given_a
 
 
 def compute_returnability_from_rollout(
@@ -715,6 +1014,32 @@ def compute_path_flexibility_for_tree(
 
     results = []
 
+    # Extract current belief states from tree root (if available)
+    root_node = root_idx(focal_tree)
+    current_qs_i = None
+    current_qs_j = None
+
+    if hasattr(focal_tree, 'qs') and root_node >= 0:
+        try:
+            # Extract belief state from root node
+            # Tree structure: tree.qs might be [batch, node_id, state_factors, states]
+            current_qs_i = focal_tree.qs[0, root_node]
+            # For factorized beliefs, take first factor
+            if isinstance(current_qs_i, (list, tuple)) or (hasattr(current_qs_i, 'shape') and len(current_qs_i.shape) > 1):
+                current_qs_i = current_qs_i[0] if isinstance(current_qs_i, (list, tuple)) else current_qs_i[0]
+            current_qs_i = np.array(current_qs_i)
+        except:
+            LOGGER.warning("Could not extract belief state from tree, will use default")
+
+    if hasattr(other_tree, 'qs') and root_node >= 0:
+        try:
+            current_qs_j = other_tree.qs[0, root_node]
+            if isinstance(current_qs_j, (list, tuple)) or (hasattr(current_qs_j, 'shape') and len(current_qs_j.shape) > 1):
+                current_qs_j = current_qs_j[0] if isinstance(current_qs_j, (list, tuple)) else current_qs_j[0]
+            current_qs_j = np.array(current_qs_j)
+        except:
+            LOGGER.warning("Could not extract other agent's belief state from tree, will use default")
+
     for node_id in root_policy_nodes:
         LOGGER.debug(f"Processing policy node {node_id}")
 
@@ -729,10 +1054,10 @@ def compute_path_flexibility_for_tree(
 
         # 3) Compute rollout distributions for i and j
         p_obs_i = simulate_policy_and_compute_rollout_dists(
-            policy_id, focal_agent_model, horizon
+            policy_id, focal_agent_model, horizon, current_qs_i
         )
         p_obs_j = simulate_policy_and_compute_rollout_dists(
-            policy_id, other_agent_model, horizon
+            policy_id, other_agent_model, horizon, current_qs_j
         )
 
         # 4) Compute other's EFE G_j(π)
@@ -786,3 +1111,155 @@ def compute_path_flexibility_for_tree(
 
     LOGGER.info(f"Computed metrics for {len(results)} policies")
     return results
+
+
+# =============================================================================
+# F-Aware Prior for Experiment 2
+# =============================================================================
+
+def compute_F_arrays_for_policies(
+    policies: List[int],
+    focal_agent_model: Any,
+    other_agent_model: Any,
+    shared_outcome_set: List[int],
+    horizon: int,
+    lambdas: Tuple[float, float, float],
+    current_qs_i: np.ndarray = None,
+    current_qs_j: np.ndarray = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute F_i and F_j for a list of policies.
+
+    This is used INSIDE the planner for Experiment 2 to compute
+    the F-aware prior over policies.
+
+    Parameters
+    ----------
+    policies : List[int]
+        List of policy IDs to evaluate
+    focal_agent_model : Any
+        Focal agent's generative model
+    other_agent_model : Any
+        Other agent's generative model
+    shared_outcome_set : List[int]
+        Indices of "safe" observations
+    horizon : int
+        Planning horizon
+    lambdas : Tuple[float, float, float]
+        (λ_E, λ_R, λ_O) weights for flexibility components
+    current_qs_i : np.ndarray, optional
+        Focal agent's current belief state
+    current_qs_j : np.ndarray, optional
+        Other agent's current belief state
+
+    Returns
+    -------
+    F_i_array : np.ndarray
+        Flexibility values for focal agent [num_policies]
+    F_j_array : np.ndarray
+        Flexibility values for other agent [num_policies]
+    """
+    λE, λR, λO = lambdas
+    F_i_list = []
+    F_j_list = []
+
+    LOGGER.debug(f"Computing F for {len(policies)} policies")
+
+    for policy_id in policies:
+        # Rollout for i and j using clean API
+        _, p_o_i = rollout_beliefs_and_obs(policy_id, focal_agent_model, horizon, current_qs_i)
+        _, p_o_j = rollout_beliefs_and_obs(policy_id, other_agent_model, horizon, current_qs_j)
+
+        # Empowerment
+        E_i = compute_empowerment_along_rollout(focal_agent_model, policy_id, horizon, current_qs_i)
+        E_j = compute_empowerment_along_rollout(other_agent_model, policy_id, horizon, current_qs_j)
+
+        # Returnability
+        R_i = compute_returnability_from_rollout(p_o_i, shared_outcome_set)
+        R_j = compute_returnability_from_rollout(p_o_j, shared_outcome_set)
+
+        # Overlap
+        O_ij = compute_overlap_from_two_rollouts(p_o_i, p_o_j)
+
+        # Flexibility
+        F_i = λE * E_i + λR * R_i + λO * O_ij
+        F_j = λE * E_j + λR * R_j + λO * O_ij
+
+        F_i_list.append(F_i)
+        F_j_list.append(F_j)
+
+        LOGGER.debug(f"  Policy {policy_id}: F_i={F_i:.4f}, F_j={F_j:.4f}")
+
+    return np.array(F_i_list), np.array(F_j_list)
+
+
+def compute_q_pi_with_F_prior(
+    G_i: np.ndarray,
+    G_j: np.ndarray,
+    F_i: np.ndarray,
+    F_j: np.ndarray,
+    gamma: float,
+    alpha: float,
+    kappa: float,
+    beta: float,
+) -> np.ndarray:
+    """
+    Compute policy posterior with F-aware prior.
+
+    For Experiment 2:
+        G_social = G_i + α·G_j
+        F_joint = F_i + β·F_j
+        J_i(π) = G_social - (κ/γ)·F_joint
+        q(π) = softmax(-γ·J_i)
+
+    For Experiment 1 (κ=0):
+        J_i(π) = G_social
+        q(π) = softmax(-γ·G_social)
+
+    Parameters
+    ----------
+    G_i : np.ndarray
+        Focal agent's EFE per policy [num_policies]
+    G_j : np.ndarray
+        Other agent's EFE per policy [num_policies]
+    F_i : np.ndarray
+        Focal agent's flexibility per policy [num_policies]
+    F_j : np.ndarray
+        Other agent's flexibility per policy [num_policies]
+    gamma : float
+        Precision (inverse temperature)
+    alpha : float
+        Empathy weight
+    kappa : float
+        Flexibility prior strength (0 = no F-prior)
+    beta : float
+        Weight on other's flexibility
+
+    Returns
+    -------
+    q_pi : np.ndarray
+        Policy posterior [num_policies]
+    """
+    # Social EFE
+    G_social = G_i + alpha * G_j
+
+    # Joint flexibility
+    F_joint = F_i + beta * F_j
+
+    # Decision variable
+    J = G_social - (kappa / gamma) * F_joint
+
+    # Softmax(-γ J)
+    logits = -gamma * J
+    logits = logits - logits.max()  # numerical stability
+    exp_logits = np.exp(logits)
+    q_pi = exp_logits / (exp_logits.sum() + 1e-12)
+
+    LOGGER.debug(
+        f"Policy posterior computed: "
+        f"G_social range=[{G_social.min():.3f}, {G_social.max():.3f}], "
+        f"F_joint range=[{F_joint.min():.3f}, {F_joint.max():.3f}], "
+        f"J range=[{J.min():.3f}, {J.max():.3f}]"
+    )
+
+    return q_pi

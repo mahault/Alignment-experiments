@@ -37,11 +37,18 @@ import jax.random as jr
 import jax.numpy as jnp
 import numpy as np
 
-# TODO: Import when available
-# from src.envs.lava_corridor import LavaCorridorEnv
-# from src.tom.si_tom import ToMAgent, si_policy_search_tom
-# from src.tom.rollout_tom import rollout
-# from src.metrics.path_flexibility import compute_path_flexibility_for_tree
+# Environment and rollout
+from src.envs import LavaCorridorEnv, LavaCorridorConfig, rollout_exp2
+# from src.envs import build_generative_model_for_env  # For building agent models
+
+# Path flexibility metrics
+from src.metrics.path_flexibility import compute_path_flexibility_for_tree
+
+# F-aware prior for Exp 2
+from src.tom import ToMPolicyConfig, run_tom_step_with_F_prior
+
+# TODO: Import ToM agents when available
+# from src.tom.si_tom import ToMAgent
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -99,43 +106,52 @@ def init_env_and_agents(config: Exp2Config):
     """
     LOGGER.info(f"Initializing Experiment 2 with κ={config.kappa_prior}")
 
-    # TODO: Replace with actual imports
-    # env = LavaCorridorEnv(
-    #     height=config.env_height,
-    #     width=config.env_width,
-    #     slip_prob=config.slip_prob,
+    # Initialize LavaCorridorEnv
+    env_config = LavaCorridorConfig(
+        width=config.env_width,
+        height=3,  # Fixed for lava corridor
+        num_agents=2,
+        slip_prob=config.slip_prob,
+    )
+    env = LavaCorridorEnv(env_config)
+
+    # Get shared "safe" outcomes from environment (for returnability computation)
+    config.shared_outcome_set = env.shared_outcome_obs_indices()
+    LOGGER.info(f"Shared safe outcomes (obs indices): {config.shared_outcome_set}")
+
+    # TODO: Build ToM agents when available
+    # NOTE: In Exp 2, agents use BOTH α (empathy) AND κ (flexibility prior)
+    #
+    # from src.envs import build_generative_model_for_env
+    #
+    # # Build generative models for each agent
+    # model_0 = build_generative_model_for_env(env, agent_id=0)
+    # model_1 = build_generative_model_for_env(env, agent_id=1)
+    #
+    # # Create PyMDP agents with these models
+    # from pymdp.agent import Agent
+    #
+    # focal_agent = Agent(
+    #     A=model_0["A"],
+    #     B=model_0["B"],
+    #     C=model_0["C"],
+    #     D=model_0["D"],
+    #     # ... ToM-specific parameters with κ, β for F-prior
     # )
-
-    # config.shared_outcome_set = env.shared_outcomes()
-
-    # # Build ToM agents WITH F-prior
-    # focal_agent = ToMAgent(
-    #     num_agents=2,
-    #     agent_idx=0,
-    #     alpha=config.alpha_empathy,
-    #     kappa=config.kappa_prior,        # F-prior strength
-    #     beta=config.beta_joint_flex,     # Weight on other's F
-    #     gamma=config.gamma,
-    #     horizon=config.horizon,
-    # )
-
+    #
     # other_agents = [
-    #     ToMAgent(
-    #         num_agents=2,
-    #         agent_idx=1,
-    #         alpha=config.alpha_empathy,
-    #         kappa=config.kappa_prior,
-    #         beta=config.beta_joint_flex,
-    #         gamma=config.gamma,
-    #         horizon=config.horizon,
+    #     Agent(
+    #         A=model_1["A"],
+    #         B=model_1["B"],
+    #         C=model_1["C"],
+    #         D=model_1["D"],
+    #         # ... ToM-specific parameters with κ, β for F-prior
     #     )
     # ]
 
-    # STUB
-    env = None
+    # STUB for now - agents not implemented yet
     focal_agent = None
-    other_agents = None
-    config.shared_outcome_set = [0, 1, 2]
+    other_agents = [None]
 
     LOGGER.info("Environment and agents initialized with F-prior")
     return env, focal_agent, other_agents
@@ -155,29 +171,43 @@ def run_single_episode_exp2(
     """
     LOGGER.debug(f"Running episode with key={key}, κ={config.kappa_prior}")
 
-    # TODO: Replace with actual rollout
-    # The key difference: rollout will use si_policy_search_tom with κ, β
-    # Inside si_tom.py, policy selection will be:
+    # 1) Configure F-aware prior for Exp 2
+    # The key difference: run_tom_step_with_F_prior uses κ, β
+    # Policy selection becomes:
     #   J_i = G_i + α*G_j - (κ/γ)*(F_i + β*F_j)
     #   q_pi = softmax(-γ * J_i)
+    tom_config = ToMPolicyConfig(
+        horizon=config.horizon,
+        gamma=config.gamma,
+        alpha_empathy=config.alpha_empathy,
+        kappa_prior=config.kappa_prior,  # F-prior strength
+        beta_joint_flex=config.beta_joint_flex,  # Weight on other's F
+        flex_lambdas=(config.lambda_E, config.lambda_R, config.lambda_O),
+        shared_outcome_set=config.shared_outcome_set,
+    )
 
-    # last, info, env_after = rollout(
-    #     env=env,
-    #     focal_agent=focal_agent,
-    #     other_agents=other_agents,
-    #     num_timesteps=config.num_timesteps,
-    #     rng_key=key,
-    # )
+    # 2) Run multi-agent rollout with F-aware prior
+    agents = [focal_agent] + other_agents  # Combine into list
+    last, info, env_after = rollout_exp2(
+        env=env,
+        agents=agents,
+        num_timesteps=config.num_timesteps,
+        tom_config=tom_config,  # This enables F-aware prior!
+        rng_key=key,
+    )
 
-    # focal_tree_final = info["tree"][-1]
-    # other_trees_final = info["other_tree"][-1]
+    # TODO: Extract ToM trees and compute path flexibility when ToM agents available
+    # 3) Extract ToM trees from rollout info
+    # focal_tree_final = info["trees"][-1][0]  # Last timestep, focal agent
+    # other_tree_final = info["trees"][-1][1]  # Last timestep, other agent
 
     # focal_idx = 0
     # other_idx = 1
 
+    # # 4) Compute path flexibility for all candidate policies in tree
     # metrics_per_policy = compute_path_flexibility_for_tree(
     #     focal_tree=focal_tree_final,
-    #     other_tree=other_trees_final,
+    #     other_tree=other_tree_final,
     #     focal_agent_model=focal_agent,           # Agent's generative model
     #     other_agent_model=other_agents[0],       # Other agent's model
     #     focal_agent_idx=focal_idx,
@@ -187,13 +217,14 @@ def run_single_episode_exp2(
     #     lambdas=(config.lambda_E, config.lambda_R, config.lambda_O),
     # )
 
-    # episode_stats = {
-    #     "collision": bool(info.get("collision", False)),
-    #     "success_i": bool(info.get("success_i", False)),
-    #     "success_j": bool(info.get("success_j", False)),
-    #     "timesteps": int(info.get("timesteps", config.num_timesteps)),
-    #     "kappa": config.kappa_prior,
-    # }
+    # 5) Extract episode-level statistics (already computed by rollout)
+    episode_stats = {
+        "collision": info["collision"],
+        "success_i": info["success_i"],
+        "success_j": info["success_j"],
+        "timesteps": info["timesteps"],
+        "kappa": config.kappa_prior,
+    }
 
     # STUB
     metrics_per_policy = [

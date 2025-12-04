@@ -183,12 +183,12 @@ Alignment-experiments/
 │   │   └── __init__.py
 │   │
 │   ├── tom/
-│   │   ├── si_tom.py              # ToM tree search & policy evaluation
-│   │   ├── rollout_tom.py         # Multi-agent rollout with ToM
+│   │   ├── si_tom_F_prior.py      # F-aware policy prior for Experiment 2
 │   │   └── __init__.py
 │   │
 │   ├── envs/
 │   │   ├── lava_corridor.py       # Two-agent gridworld environment
+│   │   ├── rollout_lava.py        # Multi-agent rollout functions
 │   │   └── __init__.py
 │   │
 │   ├── metrics/
@@ -222,10 +222,16 @@ Alignment-experiments/
 - Returns: `tom_results`, `EFE_arr [K, num_policies]`, `Emp_arr [K, num_policies]`
 - Handles state inference, policy inference, belief updates, learning
 
-**`tom/rollout_tom.py`**
-- `rollout()`: Multi-agent environment interaction loop
-- Integrates ToM tree search at each timestep
+**`tom/planning/rollout.py`**
+- `rollout()`: JAX-optimized active inference rollout with tree recycling
+- Integrates tree search at each timestep
 - Logs trees, beliefs, policies, metrics
+
+**`src/envs/rollout_lava.py`**
+- `rollout_multi_agent_lava()`: Multi-agent rollout for LavaCorridorEnv
+- `rollout_exp1()`: Wrapper for Experiment 1 (standard ToM, κ=0)
+- `rollout_exp2()`: Wrapper for Experiment 2 (F-aware prior, κ>0)
+- Handles collision detection, success tracking, comprehensive logging
 
 **`metrics/path_flexibility.py`**
 - `compute_empowerment_along_path()`: Average empowerment over policy trajectory
@@ -310,61 +316,160 @@ Generates:
 
 ### Key Integration Points
 
-The experiment scaffolds are complete, but several integration points need implementation:
+The experiment scaffolds are complete, and core integration functions are now implemented:
 
-#### 1. `compute_path_flexibility_for_tree()` (CRITICAL PATH)
+#### 1. `compute_path_flexibility_for_tree()` ✅ IMPLEMENTED
 
-**Location**: `src/metrics/path_flexibility.py:230`
+**Location**: `src/metrics/path_flexibility.py:646`
 
-Currently a STUB. This function bridges the ToM tree output with the flexibility metrics:
+**Status**: Fully implemented with ToM tree integration
 
+This function now:
+- Extracts root policy nodes from ToM tree using `get_root_policy_nodes()`
+- Reads G_i(π) directly from `tree.G` at policy nodes
+- Extracts current belief states from tree root
+- Simulates policies forward using A, B matrices to get observation distributions
+- Computes G_j(π) via `compute_EFE_from_rollout()`
+- Computes E, R, O components for both agents
+- Returns complete `List[PolicyMetrics]`
+
+**Implemented helper functions**:
+- `root_idx()` - Find root node (from `tom/planning/si_tom.py`)
+- `get_root_policy_nodes()` - Extract root-level policy nodes for focal agent
+- `predict_obs_dist()` - Forward-simulate p(o_t|π) using A, B matrices
+- `simulate_policy_and_compute_rollout_dists()` - Get observation distributions over time
+- `get_p_o_given_a()` - Compute p(o|a) transition matrix for empowerment
+- `compute_empowerment_along_rollout()` - Average empowerment over trajectory
+- `compute_returnability_from_rollout()` - Returnability from observation dists
+- `compute_overlap_from_two_rollouts()` - Overlap between agents' predictions
+- `compute_EFE_from_rollout()` - Approximate EFE from observation dists
+- `approximate_EFE_step()` - EFE contribution per timestep
+
+#### 2. Multi-Agent Rollout for Lava Corridor ✅ IMPLEMENTED
+
+**Location**: `src/envs/rollout_lava.py`
+
+**Status**: Fully implemented with comprehensive logging
+
+**Functions**:
+- **`rollout_multi_agent_lava()`** - General multi-agent rollout with optional F-prior
+- **`rollout_exp1()`** - Convenience wrapper for Experiment 1 (κ=0, standard ToM)
+- **`rollout_exp2()`** - Convenience wrapper for Experiment 2 (κ>0, F-aware prior)
+
+**Features**:
+- Multi-agent coordination in LavaCorridorEnv
+- Collision detection and logging
+- Success tracking (per-agent and joint)
+- Lava hit detection
+- Support for both Exp 1 (standard ToM) and Exp 2 (F-aware prior)
+- Comprehensive logging at all levels (DEBUG, INFO, WARNING)
+
+**Returns**:
+- `last_carry`: Final state, observations, beliefs
+- `info`: Complete history with:
+  - states, observations, actions, beliefs
+  - collision, success_i, success_j, lava_hit flags
+  - timesteps taken
+
+**Usage**:
 ```python
-def compute_path_flexibility_for_tree(focal_tree, other_tree, ...):
-    # TODO: Extract policies from ToM tree structure
-    # TODO: Extract G_i(π), G_j(π) from tree
-    # TODO: For each policy, compute E, R, O components
-    # TODO: Return List[PolicyMetrics]
+from src.envs import rollout_exp1, rollout_exp2, ToMPolicyConfig
+
+# Experiment 1: Standard ToM
+last, info, env = rollout_exp1(
+    env=env,
+    agents=[focal_agent] + other_agents,
+    num_timesteps=20,
+    alpha_empathy=1.0,
+)
+
+# Experiment 2: F-aware prior
+tom_config = ToMPolicyConfig(kappa_prior=0.5, ...)
+last, info, env = rollout_exp2(
+    env=env,
+    agents=[focal_agent] + other_agents,
+    num_timesteps=20,
+    tom_config=tom_config,
+)
 ```
 
-**Next steps**:
-- Inspect actual ToM tree structure from `tom/si_tom.py`
-- Extract EFE values (currently returned as `EFE_arr [K, num_policies]`)
-- Map tree policies to agent models for E, R, O computation
+**Note**: The existing `tom/planning/rollout.py` provides a JAX-optimized reference implementation with tree recycling. The new `rollout_lava.py` is specifically designed for the LavaCorridorEnv experiments with simplified agent handling and explicit collision/success tracking.
 
-#### 2. ToM Rollout Function
+#### 3. F-Prior Integration (Experiment 2) ✅ IMPLEMENTED
 
-**Location**: `src/tom/rollout_tom.py` (needs creation)
+**Location**: `src/tom/si_tom_F_prior.py`
 
-Multi-agent interaction loop that:
-- Calls `run_tom_step()` each timestep
-- Steps environment
-- Logs trees, beliefs, metrics
-- Returns episode info with collision/success flags
+**Status**: Fully implemented
 
-#### 3. F-Prior Integration (Experiment 2)
-
-**Location**: `tom/si_tom.py` (modify policy search)
-
-For Exp 2, policy selection must use:
+For Exp 2, policy selection now uses:
 ```
 J_i(π) = G_i(π) + α·G_j(π) - (κ/γ)[F_i(π) + β·F_j(π)]
 q(π) = softmax(-γ J_i(π))
 ```
 
-Requires:
-- Accepting κ, β parameters in `run_tom_step()`
-- Computing F for each candidate policy during tree search
-- Updating policy sampling to use J_i instead of G_i
+**Implementation**:
+- **`ToMPolicyConfig`** dataclass for configuring α, κ, β parameters
+- **`run_tom_step_with_F_prior()`** - Wrapper around `run_tom_step` that:
+  - Runs standard ToM step first to get G_i, G_j
+  - If κ > 0, computes F_i, F_j using `compute_F_arrays_for_policies()`
+  - Recomputes q(π) using `compute_q_pi_with_F_prior()`
+  - If κ = 0, reduces to standard ToM (Exp 1)
 
-#### 4. Environment Completion
+**New functions** in `src/metrics/path_flexibility.py`:
+- **`rollout_beliefs_and_obs()`** - Clean API for forward simulation
+- **`compute_F_arrays_for_policies()`** - Compute F for all policies
+- **`compute_q_pi_with_F_prior()`** - Policy posterior with F-aware prior
+- **`get_p_o_given_a_at_t()`** - Transition matrix for empowerment
+
+**Usage**:
+```python
+from src.tom import ToMPolicyConfig, run_tom_step_with_F_prior
+
+tom_config = ToMPolicyConfig(
+    horizon=5,
+    gamma=16.0,
+    alpha_empathy=1.0,
+    kappa_prior=0.5,  # 0 = Exp 1, >0 = Exp 2
+    beta_joint_flex=1.0,
+    flex_lambdas=(1.0, 1.0, 1.0),
+    shared_outcome_set=[...],
+)
+
+tom_results, EFE_arr, Emp_arr = run_tom_step_with_F_prior(
+    agents=agents,
+    o=observation,
+    qs_prev=qs_prev,
+    t=t,
+    config=tom_config,
+    # ... other params
+)
+```
+
+#### 4. Environment Completion ✅ IMPLEMENTED
 
 **Location**: `src/envs/lava_corridor.py`
 
-Needs `shared_outcomes()` method:
-```python
-def shared_outcomes(self) -> List[int]:
-    """Return indices of 'safe' outcomes (not lava, not walls)."""
-```
+**Status**: Fully implemented with comprehensive logging
+
+**Lava Corridor Environment**:
+- **3-row grid**: Row 0 (lava) | Row 1 (safe corridor) | Row 2 (lava)
+- **Actions**: UP, DOWN, LEFT, RIGHT, STAY (5 actions per agent)
+- **Observations**: Fully observable positions (x, y)
+- **Goals**: All agents must reach (goal_x, safe_y)
+- **Termination**: Lava hit, collision, or goal reached
+
+**Key Methods**:
+- `shared_outcomes()` - Returns list of safe (x, y) positions
+- `shared_outcome_obs_indices()` - Returns observation indices for returnability
+- `pos_to_obs_index()` / `obs_index_to_pos()` - Position ↔ observation mapping
+- `render()` - ASCII visualization
+- `build_generative_model_for_env()` - Constructs A, B, C, D matrices
+
+**Logging**:
+- Initialization: grid dimensions, start positions, goal
+- Reset: per-agent positions and observation indices
+- Step: actions, position changes, lava hits, collisions, success
+- All key events (lava, collision, goal) logged at WARNING/INFO level
 
 ### Data Flow
 
@@ -390,11 +495,18 @@ Experiment → rollout() → run_tom_step() → policy search (with optional F-p
 - [x] Create shared type system (src/common/types.py)
 - [x] Write `experiments/exp1_flex_vs_efe.py` script
 - [x] Write `experiments/exp2_flex_prior.py` script
-- [ ] Implement `compute_path_flexibility_for_tree()` (currently STUB in path_flexibility.py)
-- [ ] Complete `envs/lava_corridor.py` (add shared_outcomes() method)
-- [ ] Wire α, κ, β parameters into si_policy_search_tom for Exp 2
-- [ ] Connect actual ToM rollout to experiments (replace STUBs)
-- [ ] Test full pipeline end-to-end
+- [x] **Implement `compute_path_flexibility_for_tree()` with full ToM tree integration**
+- [x] **Implement helper functions: `root_idx()`, `get_root_policy_nodes()`, `predict_obs_dist()`, `get_p_o_given_a()`**
+- [x] **Implement clean `rollout_beliefs_and_obs()` API for forward simulation**
+- [x] **Implement F-aware prior: `compute_F_arrays_for_policies()`, `compute_q_pi_with_F_prior()`**
+- [x] **Create `src/tom/si_tom_F_prior.py` with `run_tom_step_with_F_prior()` and `ToMPolicyConfig`**
+- [x] **Implement `LavaCorridorEnv` with `shared_outcomes()` and `build_generative_model_for_env()`**
+- [x] **Add comprehensive logging to LavaCorridorEnv (initialization, steps, lava, collision, success)**
+- [x] **Create `src/envs/rollout_lava.py` with multi-agent rollout functions for Experiments 1 and 2**
+- [x] **Implement `rollout_exp1()`, `rollout_exp2()`, and `rollout_multi_agent_lava()` with collision/success detection**
+- [x] **Update experiment scripts (exp1, exp2) to use new rollout functions and LavaCorridorEnv**
+- [ ] Implement ToM agent wrapper (PyMDP Agent with ToM-specific parameters)
+- [ ] Test full pipeline end-to-end with actual ToM agents
 
 ### Mid-term (Extensions)
 - [ ] Multi-agent (K > 2) experiments
