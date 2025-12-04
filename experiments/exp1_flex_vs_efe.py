@@ -107,39 +107,35 @@ def init_env_and_agents(config: Exp1Config):
     config.shared_outcome_set = env.shared_outcome_obs_indices()
     LOGGER.info(f"Shared safe outcomes (obs indices): {config.shared_outcome_set}")
 
-    # TODO: Build ToM agents when available
+    # Build ToM agents
     # NOTE: In Exp 1, agents use α (empathy) but NOT κ (flexibility prior)
-    #
-    # from src.envs import build_generative_model_for_env
-    #
-    # # Build generative models for each agent
-    # model_0 = build_generative_model_for_env(env, agent_id=0)
-    # model_1 = build_generative_model_for_env(env, agent_id=1)
-    #
-    # # Create PyMDP agents with these models
-    # from pymdp.agent import Agent
-    #
-    # focal_agent = Agent(
-    #     A=model_0["A"],
-    #     B=model_0["B"],
-    #     C=model_0["C"],
-    #     D=model_0["D"],
-    #     # ... ToM-specific parameters
-    # )
-    #
-    # other_agents = [
-    #     Agent(
-    #         A=model_1["A"],
-    #         B=model_1["B"],
-    #         C=model_1["C"],
-    #         D=model_1["D"],
-    #         # ... ToM-specific parameters
-    #     )
-    # ]
+    from src.agents.tom_agent_factory import create_tom_agents, AgentConfig
 
-    # STUB for now - agents not implemented yet
-    focal_agent = None
-    other_agents = [None]
+    agent_config = AgentConfig(
+        horizon=config.horizon,
+        gamma=config.gamma,
+        alpha_empathy=config.alpha_empathy,
+        kappa_prior=0.0,  # Exp 1: NO flexibility prior
+        beta_joint_flex=config.beta_joint_flex,
+        lambda_E=config.lambda_E,
+        lambda_R=config.lambda_R,
+        lambda_O=config.lambda_O,
+        learn_B=False,
+    )
+
+    agents, A_matrices, B_matrices, C_matrices, D_matrices = create_tom_agents(
+        env=env,
+        num_agents=2,
+        config=agent_config,
+    )
+
+    focal_agent = agents[0]
+    other_agents = [agents[1]]
+
+    LOGGER.info(f"Created {len(agents)} ToM agents")
+    LOGGER.info(f"  Policies per agent: {len(focal_agent.policies)}")
+    LOGGER.info(f"  Horizon: {config.horizon}, Gamma: {config.gamma}")
+    LOGGER.info(f"  Alpha (empathy): {config.alpha_empathy}, Kappa (F-prior): 0.0 [Exp 1]")
 
     LOGGER.info("Environment and agents initialized")
     return env, focal_agent, other_agents

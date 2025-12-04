@@ -143,47 +143,8 @@ def rollout_multi_agent_lava(
         actions = {}
 
         if tom_step_fn is None:
-            # Placeholder: random actions
-            LOGGER.warning("Using random actions (ToM not available)")
-            from src.envs.lava_corridor import ACTIONS
-            actions = {aid: np.random.choice(ACTIONS) for aid in range(num_agents)}
-        else:
-            # Run ToM step to get policy and sample action
-            # This is simplified - actual implementation would need proper agent structures
-            # For now, log the intent
-            LOGGER.debug("Running ToM policy search...")
-
-            # Placeholder for actual ToM integration
-            # In practice, this would call:
-            # if use_F_prior:
-            #     tom_results, EFE_arr, Emp_arr = tom_step_fn(
-            #         agents=pymdp_agents,
-            #         o=o_array,
-            #         qs_prev=qs_prev,
-            #         t=t,
-            #         learn=False,
-            #         agent_num=0,  # focal agent
-            #         B_self=B_matrices[0],
-            #         config=tom_config,
-            #     )
-            # else:
-            #     tom_results, EFE_arr, Emp_arr = tom_step_fn(
-            #         agents=pymdp_agents,
-            #         o=o_array,
-            #         qs_prev=qs_prev,
-            #         t=t,
-            #         learn=False,
-            #         agent_num=0,
-            #         B_self=B_matrices[0],
-            #     )
-            #
-            # # Sample actions from q_pi
-            # for aid in range(num_agents):
-            #     q_pi = tom_results[aid]["q_pi"]
-            #     policy_idx = np.random.choice(len(q_pi), p=q_pi)
-            #     actions[aid] = get_action_from_policy(policy_idx, t, agents[aid].policies)
-
-            # For now, use simple heuristic: move right toward goal
+            # Fallback: simple heuristic
+            LOGGER.warning("Using heuristic actions (ToM not available)")
             from src.envs.lava_corridor import RIGHT, STAY
             for aid in range(num_agents):
                 x, y = obs[aid]
@@ -191,6 +152,65 @@ def rollout_multi_agent_lava(
                     actions[aid] = RIGHT
                 else:
                     actions[aid] = STAY
+        else:
+            # Run ToM policy search
+            LOGGER.debug("Running ToM policy search...")
+
+            # Get B matrices for learning (use first agent's B for now)
+            B_self = agents[0].B if hasattr(agents[0], 'B') else None
+
+            if use_F_prior:
+                # Experiment 2: F-aware prior
+                tom_results, EFE_arr, Emp_arr = tom_step_fn(
+                    agents=agents,
+                    o=o_array,
+                    qs_prev=qs_prev,
+                    t=t,
+                    learn=False,  # Can enable learning later
+                    agent_num=0,  # Focal agent
+                    B_self=B_self,
+                    config=tom_config,
+                )
+            else:
+                # Experiment 1: Standard ToM
+                tom_results, EFE_arr, Emp_arr = tom_step_fn(
+                    agents=agents,
+                    o=o_array,
+                    qs_prev=qs_prev,
+                    t=t,
+                    learn=False,
+                    agent_num=0,
+                    B_self=B_self,
+                )
+
+            # Extract actions from tom_results
+            for aid in range(num_agents):
+                # tom_results[aid]["action"] is the sampled action
+                action = tom_results[aid]["action"]
+
+                # Convert to integer if it's an array
+                if isinstance(action, np.ndarray):
+                    action = int(action[0]) if action.size == 1 else int(action)
+                else:
+                    action = int(action)
+
+                actions[aid] = action
+
+                LOGGER.debug(
+                    f"  Agent {aid}: q_pi max={tom_results[aid]['q_pi'].max():.3f}, "
+                    f"G mean={tom_results[aid]['G'].mean():.3f}, action={action}"
+                )
+
+            # Store beliefs for next timestep
+            qs_prev = tom_results
+
+            # Store beliefs in history
+            beliefs_history.append({
+                aid: tom_results[aid]["qs"] for aid in range(num_agents)
+            })
+
+            # Store tom_results for potential tree extraction
+            trees_history.append(tom_results)
 
         LOGGER.debug(f"Actions: {actions}")
         for aid, action in actions.items():
