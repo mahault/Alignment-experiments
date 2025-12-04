@@ -178,6 +178,8 @@ def run_single_episode_exp2(
     # metrics_per_policy = compute_path_flexibility_for_tree(
     #     focal_tree=focal_tree_final,
     #     other_tree=other_trees_final,
+    #     focal_agent_model=focal_agent,           # Agent's generative model
+    #     other_agent_model=other_agents[0],       # Other agent's model
     #     focal_agent_idx=focal_idx,
     #     other_agent_idx=other_idx,
     #     shared_outcome_set=config.shared_outcome_set,

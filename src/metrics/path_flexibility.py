@@ -397,9 +397,257 @@ def _get_action_at_timestep(agent_model: Any, policy: Any, t: int) -> int:
 # ToM Tree Integration (for experiments)
 # =============================================================================
 
+def root_idx(tree: Any) -> int:
+    """
+    Find the root node index of the ToM tree.
+
+    This is typically stored in the tree structure or is node 0.
+    """
+    # TODO: Adjust based on actual tree structure
+    # For now assume root is at index 0
+    return 0
+
+
+def get_root_policy_nodes(tree: Any, focal_agent_idx: int) -> List[int]:
+    """
+    Identify indices of root-level policy nodes for the focal agent.
+
+    - Start from the root node
+    - Take its children_indices
+    - Keep those that are used, belong to focal agent, and have a valid policy
+
+    Parameters
+    ----------
+    tree : Any
+        ToM tree structure with attributes:
+        - children_indices: child node IDs
+        - used: boolean mask of active nodes
+        - agent_idx: which agent each node belongs to
+        - policy: policy vector at each node
+    focal_agent_idx : int
+        Index of focal agent
+
+    Returns
+    -------
+    valid_nodes : List[int]
+        Indices of root-level policy nodes for focal agent
+    """
+    import jax.numpy as jnp
+
+    root_index = root_idx(tree)
+
+    child_indices = tree.children_indices[0, root_index]  # [max_branching]
+
+    # Filter valid children
+    valid_nodes = []
+    for node_id in child_indices:
+        if node_id < 0:
+            continue
+        if not bool(tree.used[0, node_id, 0]):
+            continue
+        if int(tree.agent_idx[0, node_id, 0]) != focal_agent_idx:
+            continue
+        # policy node (not observation)
+        if (tree.policy[0, node_id] >= 0).any():
+            valid_nodes.append(int(node_id))
+
+    LOGGER.debug(f"Found {len(valid_nodes)} root policy nodes for agent {focal_agent_idx}")
+    return valid_nodes
+
+
+def predict_obs_dist(agent_model: Any, policy_id: int, t: int) -> np.ndarray:
+    """
+    Predict observation distribution p(o_t | π) at timestep t.
+
+    TODO: Implement based on actual agent model structure.
+    This should use the generative model (A, B matrices) to forward-simulate.
+    """
+    # Placeholder implementation
+    num_obs = agent_model.A[0].shape[0] if hasattr(agent_model, 'A') else 10
+    return np.ones(num_obs) / num_obs
+
+
+def simulate_policy_and_compute_rollout_dists(
+    policy_id: int,
+    agent_model: Any,
+    horizon: int,
+) -> List[np.ndarray]:
+    """
+    Given a policy identifier (e.g. index into agent_model.policies),
+    run the generative model forward to get p_i(o_t | π) for each t.
+
+    Parameters
+    ----------
+    policy_id : int
+        Index of policy in agent_model.policies
+    agent_model : Any
+        Agent's generative model with A, B matrices and policies
+    horizon : int
+        Number of timesteps to simulate
+
+    Returns
+    -------
+    p_obs_over_time : List[np.ndarray]
+        Predicted observation distributions [p(o_0|π), p(o_1|π), ...]
+    """
+    p_obs_over_time = []
+
+    for t in range(horizon):
+        # Predict observation distribution at timestep t
+        p_o_t = predict_obs_dist(agent_model, policy_id, t)
+        p_obs_over_time.append(p_o_t)
+
+    return p_obs_over_time
+
+
+def approximate_EFE_step(p_o_t: np.ndarray, preferences_C: np.ndarray) -> float:
+    """
+    Approximate EFE contribution at a single timestep.
+
+    Simplified version: G_t ≈ -E[log C(o)]
+
+    TODO: Full EFE includes epistemic and pragmatic terms.
+    """
+    # Risk term: expected negative log preference
+    log_C = np.log(preferences_C + 1e-12)
+    G_t = -np.sum(p_o_t * log_C)
+    return float(G_t)
+
+
+def compute_EFE_from_rollout(
+    p_obs_over_time: List[np.ndarray],
+    preferences_C: np.ndarray
+) -> float:
+    """
+    Approximate EFE given predicted observation distributions and preferences.
+
+    G(π) ≈ sum_t E_q(π)[- log C(o_t)]
+
+    Parameters
+    ----------
+    p_obs_over_time : List[np.ndarray]
+        Predicted observation distributions over time
+    preferences_C : np.ndarray
+        Preference vector over observations
+
+    Returns
+    -------
+    G : float
+        Expected free energy
+    """
+    G = 0.0
+    for p_o_t in p_obs_over_time:
+        G_t = approximate_EFE_step(p_o_t, preferences_C)
+        G += G_t
+    return float(G)
+
+
+def get_p_o_given_a(agent_model: Any, policy_id: int, t: int) -> np.ndarray:
+    """
+    Get p(o | a) for empowerment computation at timestep t.
+
+    TODO: Implement based on actual agent model structure.
+    Should return [num_actions, num_obs] array.
+    """
+    # Placeholder: return uniform distribution
+    num_actions = 4  # TODO: extract from model
+    num_obs = agent_model.A[0].shape[0] if hasattr(agent_model, 'A') else 10
+    return np.ones((num_actions, num_obs)) / num_obs
+
+
+def compute_empowerment_along_rollout(
+    agent_model: Any,
+    policy_id: int,
+    horizon: int
+) -> float:
+    """
+    Compute average empowerment along a policy rollout.
+
+    E(π) = (1/T) sum_t E_t
+    where E_t = I(A_t; O_{t+1})
+
+    Parameters
+    ----------
+    agent_model : Any
+        Agent's generative model
+    policy_id : int
+        Index of policy
+    horizon : int
+        Planning horizon
+
+    Returns
+    -------
+    E : float
+        Average empowerment
+    """
+    from .empowerment import estimate_empowerment_one_step
+
+    E_t = []
+    for t in range(horizon):
+        # Build p(o_{t+1} | a_t) given current belief and model
+        p_o_given_a = get_p_o_given_a(agent_model, policy_id, t)
+        E_t.append(estimate_empowerment_one_step(p_o_given_a))
+
+    return float(np.mean(E_t))
+
+
+def compute_returnability_from_rollout(
+    p_obs_over_time: List[np.ndarray],
+    shared_outcome_set: List[int],
+) -> float:
+    """
+    R(π) = sum_t Pr(O_t in shared_outcomes | π)
+
+    Parameters
+    ----------
+    p_obs_over_time : List[np.ndarray]
+        Predicted observation distributions over time
+    shared_outcome_set : List[int]
+        Indices of "safe" observations
+
+    Returns
+    -------
+    R : float
+        Returnability score
+    """
+    R = 0.0
+    for p_o_t in p_obs_over_time:
+        R_t = sum(p_o_t[o] for o in shared_outcome_set if o < len(p_o_t))
+        R += float(R_t)
+    return R
+
+
+def compute_overlap_from_two_rollouts(
+    p_obs_i: List[np.ndarray],
+    p_obs_j: List[np.ndarray]
+) -> float:
+    """
+    O_ij(π) = sum_t sum_o min(p_i(o|t), p_j(o|t))
+
+    Parameters
+    ----------
+    p_obs_i : List[np.ndarray]
+        Focal agent's observation distributions over time
+    p_obs_j : List[np.ndarray]
+        Other agent's observation distributions over time
+
+    Returns
+    -------
+    O : float
+        Overlap score
+    """
+    O = 0.0
+    for p_i_t, p_j_t in zip(p_obs_i, p_obs_j):
+        for o in range(min(len(p_i_t), len(p_j_t))):
+            O += float(min(p_i_t[o], p_j_t[o]))
+    return O
+
+
 def compute_path_flexibility_for_tree(
     focal_tree: Any,
     other_tree: Any,
+    focal_agent_model: Any,
+    other_agent_model: Any,
     focal_agent_idx: int,
     other_agent_idx: int,
     shared_outcome_set: List[int],
@@ -407,7 +655,8 @@ def compute_path_flexibility_for_tree(
     lambdas: Tuple[float, float, float],
 ) -> List[Dict]:
     """
-    Extract EFE and compute path flexibility for all policies in ToM tree.
+    Compute G_i, G_j, E, R, O, F for each root-level policy considered
+    by the focal agent in the ToM tree.
 
     This is the main integration function called by experiments.
     Given a ToM tree (output of si_policy_search_tom), extract:
@@ -420,6 +669,10 @@ def compute_path_flexibility_for_tree(
         ToM tree for focal agent (contains policies, EFEs, beliefs)
     other_tree : Any
         ToM tree for other agent
+    focal_agent_model : Any
+        Focal agent's generative model (A, B matrices, policies, preferences)
+    other_agent_model : Any
+        Other agent's generative model
     focal_agent_idx : int
         Index of focal agent (typically 0)
     other_agent_idx : int
@@ -436,6 +689,7 @@ def compute_path_flexibility_for_tree(
     metrics_per_policy : List[Dict]
         For each policy π in the tree:
         {
+            "node_id": int,
             "policy_id": int,
             "G_i": float,           # Focal agent's EFE
             "G_j": float,           # Other agent's EFE
@@ -450,77 +704,85 @@ def compute_path_flexibility_for_tree(
             "O_ij": float,          # Outcome overlap
         }
     """
+    import jax.numpy as jnp
+
     LOGGER.info("Computing path flexibility for all policies in ToM tree")
 
-    # TODO: This is a STUB that needs to be implemented based on your ToM tree structure
-    # The actual implementation depends on how si_tom.py stores policies and EFEs
-    #
-    # Expected ToM tree attributes (based on si_tom code):
-    # - focal_tree.policies: list of policy sequences
-    # - focal_tree.G: array of EFE values per policy [num_policies]
-    # - focal_tree.qs: belief state distribution
-    # - focal_tree.A: observation likelihood matrix
-    # - focal_tree.B: transition matrix
-    #
-    # other_tree should have similar structure for the other agent
+    λE, λR, λO = lambdas
 
-    LOGGER.warning("compute_path_flexibility_for_tree is currently a STUB")
-    LOGGER.warning("TODO: Implement based on actual ToM tree structure from si_tom.py")
+    # Get root policy nodes for focal agent
+    root_policy_nodes = get_root_policy_nodes(focal_tree, focal_agent_idx)
 
-    # STUB: Return placeholder metrics
-    # In reality, you would:
-    # 1. Extract num_policies from focal_tree
-    # 2. For each policy π:
-    #    a. Extract G_i from focal_tree.G[π]
-    #    b. Extract G_j from other_tree.G[π] (via ToM)
-    #    c. Compute F_i, F_j using compute_path_flexibility()
-    # 3. Package into list of dicts
+    results = []
 
-    num_policies = 10  # placeholder
-    lambda_E, lambda_R, lambda_O = lambdas
+    for node_id in root_policy_nodes:
+        LOGGER.debug(f"Processing policy node {node_id}")
 
-    metrics_per_policy = []
-    for policy_idx in range(num_policies):
-        # TODO: Replace with actual extraction from tree
-        G_i = 0.0  # focal_tree.G[policy_idx]
-        G_j = 0.0  # other_tree.G[policy_idx]
+        # 1) Identify which primitive policy this node corresponds to
+        #    Each node stores a policy vector (e.g., one-hot over actions/policies)
+        policy_vector = focal_tree.policy[0, node_id]  # [n_actions] or [n_policies]
+        policy_id = int(jnp.argmax(policy_vector))
 
-        # TODO: Replace with actual flexibility computation
-        # flex_i, flex_j = compute_path_flexibility(
-        #     agent_i_model=focal_tree,
-        #     agent_j_model=other_tree,
-        #     policy_i=policy_idx,
-        #     policy_j=policy_idx,  # Assuming same policy index
-        #     horizon=horizon,
-        #     current_qs_i=focal_tree.qs,
-        #     current_qs_j=other_tree.qs,
-        #     shared_outcome_set=shared_outcome_set,
-        #     lambda_E=lambda_E,
-        #     lambda_R=lambda_R,
-        #     lambda_O=lambda_O,
-        # )
+        # 2) Compute or read own EFE G_i(π)
+        #    Option A: read from tree.G at this node
+        G_i = float(focal_tree.G[0, node_id, 0])
 
-        # Placeholder
-        E_i, E_j = 0.0, 0.0
-        R_i, R_j = 0.0, 0.0
-        O_ij = 0.0
-        F_i = lambda_E * E_i + lambda_R * R_i + lambda_O * O_ij
-        F_j = lambda_E * E_j + lambda_R * R_j + lambda_O * O_ij
+        # 3) Compute rollout distributions for i and j
+        p_obs_i = simulate_policy_and_compute_rollout_dists(
+            policy_id, focal_agent_model, horizon
+        )
+        p_obs_j = simulate_policy_and_compute_rollout_dists(
+            policy_id, other_agent_model, horizon
+        )
 
-        metrics_per_policy.append({
-            "policy_id": policy_idx,
-            "G_i": float(G_i),
-            "G_j": float(G_j),
-            "G_joint": float(G_i + G_j),
-            "F_i": float(F_i),
-            "F_j": float(F_j),
-            "F_joint": float(F_i + F_j),
-            "E_i": float(E_i),
-            "E_j": float(E_j),
-            "R_i": float(R_i),
-            "R_j": float(R_j),
-            "O_ij": float(O_ij),
+        # 4) Compute other's EFE G_j(π)
+        #    Assume j has its own preferences C_j
+        preferences_j = (
+            other_agent_model.C[0]
+            if hasattr(other_agent_model, 'C')
+            else np.ones(len(p_obs_j[0]))
+        )
+        G_j = compute_EFE_from_rollout(p_obs_j, preferences_j)
+
+        # 5) Empowerment along rollout
+        E_i = compute_empowerment_along_rollout(focal_agent_model, policy_id, horizon)
+        E_j = compute_empowerment_along_rollout(other_agent_model, policy_id, horizon)
+
+        # 6) Returnability
+        R_i = compute_returnability_from_rollout(p_obs_i, shared_outcome_set)
+        R_j = compute_returnability_from_rollout(p_obs_j, shared_outcome_set)
+
+        # 7) Overlap (shared outcomes)
+        O_ij = compute_overlap_from_two_rollouts(p_obs_i, p_obs_j)
+
+        # 8) Path flexibility metrics
+        F_i = λE * E_i + λR * R_i + λO * O_ij
+        F_j = λE * E_j + λR * R_j + λO * O_ij
+
+        LOGGER.debug(
+            f"  Policy {policy_id}: "
+            f"G_i={G_i:.3f}, G_j={G_j:.3f}, "
+            f"E_i={E_i:.3f}, E_j={E_j:.3f}, "
+            f"R_i={R_i:.3f}, R_j={R_j:.3f}, "
+            f"O_ij={O_ij:.3f}, "
+            f"F_i={F_i:.3f}, F_j={F_j:.3f}"
+        )
+
+        results.append({
+            "node_id": node_id,
+            "policy_id": policy_id,
+            "G_i": G_i,
+            "G_j": G_j,
+            "G_joint": G_i + G_j,
+            "E_i": E_i,
+            "E_j": E_j,
+            "R_i": R_i,
+            "R_j": R_j,
+            "O_ij": O_ij,
+            "F_i": F_i,
+            "F_j": F_j,
+            "F_joint": F_i + F_j,
         })
 
-    LOGGER.info(f"Computed metrics for {len(metrics_per_policy)} policies")
-    return metrics_per_policy
+    LOGGER.info(f"Computed metrics for {len(results)} policies")
+    return results
