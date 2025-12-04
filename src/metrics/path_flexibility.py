@@ -391,3 +391,136 @@ def _get_action_at_timestep(agent_model: Any, policy: Any, t: int) -> int:
         # Policy is an index
         policy_seq = agent_model.policies[policy]
         return policy_seq[t] if t < len(policy_seq) else policy_seq[-1]
+
+
+# =============================================================================
+# ToM Tree Integration (for experiments)
+# =============================================================================
+
+def compute_path_flexibility_for_tree(
+    focal_tree: Any,
+    other_tree: Any,
+    focal_agent_idx: int,
+    other_agent_idx: int,
+    shared_outcome_set: List[int],
+    horizon: int,
+    lambdas: Tuple[float, float, float],
+) -> List[Dict]:
+    """
+    Extract EFE and compute path flexibility for all policies in ToM tree.
+
+    This is the main integration function called by experiments.
+    Given a ToM tree (output of si_policy_search_tom), extract:
+    - G_i(π), G_j(π) for each policy π
+    - Compute F_i(π), F_j(π) using path flexibility metrics
+
+    Parameters
+    ----------
+    focal_tree : Any
+        ToM tree for focal agent (contains policies, EFEs, beliefs)
+    other_tree : Any
+        ToM tree for other agent
+    focal_agent_idx : int
+        Index of focal agent (typically 0)
+    other_agent_idx : int
+        Index of other agent (typically 1)
+    shared_outcome_set : List[int]
+        Observation indices considered "safe" for returnability
+    horizon : int
+        Planning horizon
+    lambdas : Tuple[float, float, float]
+        (λ_E, λ_R, λ_O) weights for flexibility components
+
+    Returns
+    -------
+    metrics_per_policy : List[Dict]
+        For each policy π in the tree:
+        {
+            "policy_id": int,
+            "G_i": float,           # Focal agent's EFE
+            "G_j": float,           # Other agent's EFE
+            "G_joint": float,       # G_i + G_j
+            "F_i": float,           # Focal agent's flexibility
+            "F_j": float,           # Other agent's flexibility
+            "F_joint": float,       # F_i + F_j
+            "E_i": float,           # Focal agent's empowerment
+            "E_j": float,           # Other agent's empowerment
+            "R_i": float,           # Focal agent's returnability
+            "R_j": float,           # Other agent's returnability
+            "O_ij": float,          # Outcome overlap
+        }
+    """
+    LOGGER.info("Computing path flexibility for all policies in ToM tree")
+
+    # TODO: This is a STUB that needs to be implemented based on your ToM tree structure
+    # The actual implementation depends on how si_tom.py stores policies and EFEs
+    #
+    # Expected ToM tree attributes (based on si_tom code):
+    # - focal_tree.policies: list of policy sequences
+    # - focal_tree.G: array of EFE values per policy [num_policies]
+    # - focal_tree.qs: belief state distribution
+    # - focal_tree.A: observation likelihood matrix
+    # - focal_tree.B: transition matrix
+    #
+    # other_tree should have similar structure for the other agent
+
+    LOGGER.warning("compute_path_flexibility_for_tree is currently a STUB")
+    LOGGER.warning("TODO: Implement based on actual ToM tree structure from si_tom.py")
+
+    # STUB: Return placeholder metrics
+    # In reality, you would:
+    # 1. Extract num_policies from focal_tree
+    # 2. For each policy π:
+    #    a. Extract G_i from focal_tree.G[π]
+    #    b. Extract G_j from other_tree.G[π] (via ToM)
+    #    c. Compute F_i, F_j using compute_path_flexibility()
+    # 3. Package into list of dicts
+
+    num_policies = 10  # placeholder
+    lambda_E, lambda_R, lambda_O = lambdas
+
+    metrics_per_policy = []
+    for policy_idx in range(num_policies):
+        # TODO: Replace with actual extraction from tree
+        G_i = 0.0  # focal_tree.G[policy_idx]
+        G_j = 0.0  # other_tree.G[policy_idx]
+
+        # TODO: Replace with actual flexibility computation
+        # flex_i, flex_j = compute_path_flexibility(
+        #     agent_i_model=focal_tree,
+        #     agent_j_model=other_tree,
+        #     policy_i=policy_idx,
+        #     policy_j=policy_idx,  # Assuming same policy index
+        #     horizon=horizon,
+        #     current_qs_i=focal_tree.qs,
+        #     current_qs_j=other_tree.qs,
+        #     shared_outcome_set=shared_outcome_set,
+        #     lambda_E=lambda_E,
+        #     lambda_R=lambda_R,
+        #     lambda_O=lambda_O,
+        # )
+
+        # Placeholder
+        E_i, E_j = 0.0, 0.0
+        R_i, R_j = 0.0, 0.0
+        O_ij = 0.0
+        F_i = lambda_E * E_i + lambda_R * R_i + lambda_O * O_ij
+        F_j = lambda_E * E_j + lambda_R * R_j + lambda_O * O_ij
+
+        metrics_per_policy.append({
+            "policy_id": policy_idx,
+            "G_i": float(G_i),
+            "G_j": float(G_j),
+            "G_joint": float(G_i + G_j),
+            "F_i": float(F_i),
+            "F_j": float(F_j),
+            "F_joint": float(F_i + F_j),
+            "E_i": float(E_i),
+            "E_j": float(E_j),
+            "R_i": float(R_i),
+            "R_j": float(R_j),
+            "O_ij": float(O_ij),
+        })
+
+    LOGGER.info(f"Computed metrics for {len(metrics_per_policy)} policies")
+    return metrics_per_policy

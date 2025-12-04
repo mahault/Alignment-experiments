@@ -306,16 +306,95 @@ Generates:
 
 ---
 
+## Integration & Implementation Notes
+
+### Key Integration Points
+
+The experiment scaffolds are complete, but several integration points need implementation:
+
+#### 1. `compute_path_flexibility_for_tree()` (CRITICAL PATH)
+
+**Location**: `src/metrics/path_flexibility.py:230`
+
+Currently a STUB. This function bridges the ToM tree output with the flexibility metrics:
+
+```python
+def compute_path_flexibility_for_tree(focal_tree, other_tree, ...):
+    # TODO: Extract policies from ToM tree structure
+    # TODO: Extract G_i(π), G_j(π) from tree
+    # TODO: For each policy, compute E, R, O components
+    # TODO: Return List[PolicyMetrics]
+```
+
+**Next steps**:
+- Inspect actual ToM tree structure from `tom/si_tom.py`
+- Extract EFE values (currently returned as `EFE_arr [K, num_policies]`)
+- Map tree policies to agent models for E, R, O computation
+
+#### 2. ToM Rollout Function
+
+**Location**: `src/tom/rollout_tom.py` (needs creation)
+
+Multi-agent interaction loop that:
+- Calls `run_tom_step()` each timestep
+- Steps environment
+- Logs trees, beliefs, metrics
+- Returns episode info with collision/success flags
+
+#### 3. F-Prior Integration (Experiment 2)
+
+**Location**: `tom/si_tom.py` (modify policy search)
+
+For Exp 2, policy selection must use:
+```
+J_i(π) = G_i(π) + α·G_j(π) - (κ/γ)[F_i(π) + β·F_j(π)]
+q(π) = softmax(-γ J_i(π))
+```
+
+Requires:
+- Accepting κ, β parameters in `run_tom_step()`
+- Computing F for each candidate policy during tree search
+- Updating policy sampling to use J_i instead of G_i
+
+#### 4. Environment Completion
+
+**Location**: `src/envs/lava_corridor.py`
+
+Needs `shared_outcomes()` method:
+```python
+def shared_outcomes(self) -> List[int]:
+    """Return indices of 'safe' outcomes (not lava, not walls)."""
+```
+
+### Data Flow
+
+```
+Experiment → rollout() → run_tom_step() → policy search (with optional F-prior)
+                  ↓
+         Extract trees from final timestep
+                  ↓
+    compute_path_flexibility_for_tree()
+                  ↓
+         Aggregate metrics & analyze
+```
+
+---
+
 ## Roadmap / TODO
 
 ### Near-term (Current Focus)
 - [x] Refactor ToM into standalone `tom/si_tom.py` module
 - [x] Add comprehensive logging to all modules
-- [ ] Reorganize repository structure (src/, experiments/, notebooks/)
-- [ ] Implement `metrics/path_flexibility.py` (E, R, O computations)
-- [ ] Build `envs/lava_corridor.py` gridworld
-- [ ] Write `experiments/exp1_flex_vs_efe.py` script
-- [ ] Write `experiments/exp2_flex_prior.py` script
+- [x] Reorganize repository structure (src/, experiments/, notebooks/)
+- [x] Implement `metrics/path_flexibility.py` (E, R, O computations)
+- [x] Create shared type system (src/common/types.py)
+- [x] Write `experiments/exp1_flex_vs_efe.py` script
+- [x] Write `experiments/exp2_flex_prior.py` script
+- [ ] Implement `compute_path_flexibility_for_tree()` (currently STUB in path_flexibility.py)
+- [ ] Complete `envs/lava_corridor.py` (add shared_outcomes() method)
+- [ ] Wire α, κ, β parameters into si_policy_search_tom for Exp 2
+- [ ] Connect actual ToM rollout to experiments (replace STUBs)
+- [ ] Test full pipeline end-to-end
 
 ### Mid-term (Extensions)
 - [ ] Multi-agent (K > 2) experiments
