@@ -442,6 +442,49 @@ class LavaCorridorEnv:
 # Generative Model Builder
 # =============================================================================
 
+def sanitize_B(B_raw: np.ndarray) -> np.ndarray:
+    """
+    Ensure B_raw has no zero-sum distributions along axis=1,
+    and that everything along axis=1 is normalized.
+
+    This matches pymdp.utils.validate_normalization(self.B[f], axis=1).
+
+    Parameters
+    ----------
+    B_raw : np.ndarray
+        Transition tensor, typically shape [num_states, num_states, num_actions]
+        or [num_actions, num_states, num_states]
+
+    Returns
+    -------
+    B : np.ndarray
+        Sanitized and normalized transition tensor
+    """
+    B = B_raw.astype(float).copy()
+
+    # Sum along axis=1 (the axis pymdp validates)
+    sums = B.sum(axis=1, keepdims=True)  # shape broadcastable to B
+
+    # Identify slices where the sum along axis=1 is zero
+    zero_mask = np.isclose(sums, 0.0)
+
+    if np.any(zero_mask):
+        # Replace zero-sum slices with uniform along axis=1
+        # B has shape (..., axis=1, ...). We want a uniform over axis=1.
+        uniform_value = 1.0 / B.shape[1]
+        B = np.where(zero_mask, uniform_value, B)
+        LOGGER.warning(
+            f"Found {zero_mask.sum()} zero-sum slices in B matrix along axis=1. "
+            f"Replacing with uniform distribution."
+        )
+
+    # Renormalize along axis=1 so each distribution sums to 1
+    sums = B.sum(axis=1, keepdims=True)
+    B /= np.where(sums == 0.0, 1.0, sums)
+
+    return B
+
+
 def build_generative_model_for_env(
     env: LavaCorridorEnv,
     agent_id: int = 0,

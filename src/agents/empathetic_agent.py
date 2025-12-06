@@ -5,7 +5,41 @@ import numpy as np
 from pymdp.agent import Agent
 from pymdp.control import sample_action
 from pymdp.maths import softmax
-from pymdp.utils import dirichlet_like
+
+# Try to import dirichlet_like from pymdp, but fall back to local implementation
+try:
+    from pymdp.utils import dirichlet_like  # type: ignore[attr-defined]
+except ImportError:
+    def dirichlet_like(p_array, scale: float = 1.0):
+        """
+        Local fallback for pymdp.utils.dirichlet_like.
+
+        Given a categorical distribution (or an object-array of such),
+        return Dirichlet concentration parameters of the same shape,
+        where each categorical vector is normalised and multiplied by `scale`.
+        """
+        # Object-array case (pymdp.obj_array)
+        if isinstance(p_array, np.ndarray) and p_array.dtype == object:
+            out = np.empty_like(p_array, dtype=object)
+            for idx, arr in enumerate(p_array):
+                arr = np.array(arr, dtype=float)
+                s = arr.sum()
+                if s == 0:
+                    # fallback to uniform
+                    arr = np.ones_like(arr) / arr.size
+                else:
+                    arr = arr / s
+                out[idx] = arr * scale
+            return out
+
+        # Plain ndarray / list case
+        arr = np.array(p_array, dtype=float)
+        s = arr.sum()
+        if s == 0:
+            arr = np.ones_like(arr) / arr.size
+        else:
+            arr = arr / s
+        return arr * scale
 
 from tom.si_tom import run_tom_step
 
@@ -176,7 +210,12 @@ class EmpatheticAgent:
         # Theory of mind simulation for self (agent k = 0) and others (agent k > 0)
         for k in range(self.K):
             # Each ToM agent receives its own observation index
-            self.agents[k].infer_states([int(o[k])])
+            # Pass observation as array with factor dimension to match A/B's factor axis
+            import numpy as np
+            obs_idx = int(o[k])
+            # Make it a 1D array of length = num_factors (here 1)
+            obs_idx_arr = np.array([obs_idx], dtype=np.int32)   # shape (1,)
+            self.agents[k].infer_states([obs_idx_arr], empirical_prior=None)
 
             if self.learn:
                 self._learn(o=o, t=t, k=k, qs_prev=qs_prev)

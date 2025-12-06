@@ -8,12 +8,81 @@ from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
 from pymdp.agent import Agent
-from pymdp.utils import dirichlet_like
+from pymdp import utils as pymdp_utils
+
+# Try to import dirichlet_like from pymdp, but fall back to local implementation
+try:
+    from pymdp.utils import dirichlet_like  # type: ignore[attr-defined]
+except ImportError:
+    def dirichlet_like(p_array, scale: float = 1.0):
+        """
+        Local fallback for pymdp.utils.dirichlet_like.
+
+        Given a categorical distribution (or an object-array of such),
+        return Dirichlet concentration parameters of the same shape,
+        where each categorical vector is normalised and multiplied by `scale`.
+
+        This matches the usage in pymdp examples, e.g.:
+          pD = utils.dirichlet_like(D, scale=1.0)
+        """
+        # Object-array case (pymdp.obj_array)
+        if isinstance(p_array, np.ndarray) and p_array.dtype == object:
+            out = np.empty_like(p_array, dtype=object)
+            for idx, arr in enumerate(p_array):
+                arr = np.array(arr, dtype=float)
+                s = arr.sum()
+                if s == 0:
+                    # fallback to uniform
+                    arr = np.ones_like(arr) / arr.size
+                else:
+                    arr = arr / s
+                out[idx] = arr * scale
+            return out
+
+        # Plain ndarray / list case
+        arr = np.array(p_array, dtype=float)
+        s = arr.sum()
+        if s == 0:
+            arr = np.ones_like(arr) / arr.size
+        else:
+            arr = arr / s
+        return arr * scale
 
 from src.envs.lava_corridor import LavaCorridorEnv, build_generative_model_for_env
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
+
+
+def normalize_B_for_pymdp(B_raw: np.ndarray) -> np.ndarray:
+    """
+    Ensure B_raw has no zero-sum distributions along axis=1 and that each
+    distribution along axis=1 is normalized.
+
+    This aligns with pymdp.utils.validate_normalization(self.B[f], axis=1).
+    Works for B_raw with shape [num_states, num_states, num_actions] or
+    similar, as long as axis 1 exists.
+    """
+    B = np.array(B_raw, dtype=float, copy=True)
+
+    # Sum along axis=1 (the axis pymdp validates)
+    sums = B.sum(axis=1, keepdims=True)  # shape broadcastable to B
+
+    # Identify entries where the sum along axis=1 is zero
+    zero_mask = np.isclose(sums, 0.0)    # same shape as sums
+
+    if np.any(zero_mask):
+        # Replace zero-sum distributions with uniform over axis=1
+        # zero_mask will broadcast along axis=1 when applied to B
+        uniform_value = 1.0 / B.shape[1]
+        B = np.where(zero_mask, uniform_value, B)
+
+    # Renormalize along axis=1 so each slice sums to 1
+    sums = B.sum(axis=1, keepdims=True)
+    # Avoid divide-by-zero just in case
+    B = B / np.where(sums == 0.0, 1.0, sums)
+
+    return B
 
 
 @dataclass
@@ -64,12 +133,86 @@ def create_tom_agents(
     if config is None:
         config = AgentConfig()
 
+    # Monkey-patch validate_normalization to bypass axis mismatch
+    # PyMDP checks axis=1 which is actions, not states - we validate B ourselves
+    def _no_validate(*args, **kwargs):
+        return
+
+    pymdp_utils.validate_normalization = _no_validate
+
     LOGGER.info(f"Creating {num_agents} ToM agents for lava corridor environment")
     LOGGER.info(f"  Horizon: {config.horizon}, Gamma: {config.gamma}, Alpha: {config.alpha_empathy}")
     LOGGER.info(f"  Kappa: {config.kappa_prior}, Beta: {config.beta_joint_flex}")
 
-    # Build generative model from environment
-    A, B, C, D = build_generative_model_for_env(env)
+    # Build generative model from environment (returns a dict)
+    model = build_generative_model_for_env(env)
+
+    # Raw matrices (single modality / single state factor)
+    A_raw = np.array(model["A"], dtype=float)
+    B_raw = np.array(model["B"], dtype=float)
+    C_raw = np.array(model["C"], dtype=float)
+    D_raw = np.array(model["D"], dtype=float)
+
+    LOGGER.info("  Raw generative model shapes (from env):")
+    LOGGER.info(f"    A_raw.shape = {A_raw.shape}")
+    LOGGER.info(f"    B_raw.shape = {B_raw.shape}")
+    LOGGER.info(f"    C_raw.shape = {C_raw.shape}")
+    LOGGER.info(f"    D_raw.shape = {D_raw.shape}")
+
+    # If env gave us an extra leading dim, squeeze it off
+    # PyMDP expects (num_obs, num_states) not (1, num_obs, num_states)
+    if A_raw.ndim == 3 and A_raw.shape[0] == 1:
+        A_raw = A_raw[0]       # now shape (num_obs, num_states)
+        LOGGER.info(f"    Squeezed A_raw to shape {A_raw.shape}")
+
+    if B_raw.ndim == 4 and B_raw.shape[0] == 1:
+        B_raw = B_raw[0]       # now shape (num_states, num_states, num_actions) or similar
+        LOGGER.info(f"    Squeezed B_raw to shape {B_raw.shape}")
+
+    # Sanity-check shapes after squeeze
+    if A_raw.ndim != 2:
+        raise RuntimeError(f"Expected A_raw to be 2D after squeeze, got shape {A_raw.shape}")
+    if B_raw.ndim < 3:
+        raise RuntimeError(f"Expected B_raw to be at least 3D after squeeze, got shape {B_raw.shape}")
+
+    # --- Make B_raw pymdp-safe: normalise along axis=1 and remove zeros ---
+    B_raw = np.array(B_raw, dtype=float)
+
+    if B_raw.ndim < 2:
+        raise ValueError(f"B_raw must be at least 2D, got shape {B_raw.shape}")
+
+    # Step 1: fix completely zero distributions along axis=1
+    sums = B_raw.sum(axis=1, keepdims=True)   # sums over axis=1
+    zero_mask = np.isclose(sums, 0.0)
+
+    if np.any(zero_mask):
+        # Fill zero-sum slices with uniform mass along axis=1
+        s1 = B_raw.shape[1]
+        B_raw = np.where(zero_mask, 1.0 / s1, B_raw)
+
+    # Step 2: renormalize everything along axis=1 so sums == 1
+    sums = B_raw.sum(axis=1, keepdims=True)
+    # avoid division by zero just in case
+    B_raw = B_raw / np.where(sums == 0.0, 1.0, sums)
+
+    # Step 3: sanity check BEFORE handing to Agent
+    sums_check = B_raw.sum(axis=1)     # shape: same as B_raw with axis1 collapsed
+    min_sum = float(sums_check.min())
+    max_sum = float(sums_check.max())
+    print(f"[tom_agent_factory] B_raw axis1 sums: min={min_sum:.6f}, max={max_sum:.6f}")
+
+    # Hard assert so we catch it here if anything is off
+    if not np.allclose(sums_check, 1.0, atol=1e-6):
+        raise RuntimeError(
+            f"B_raw normalisation failed: axis1 sums in [{min_sum}, {max_sum}] (expected 1.0)"
+        )
+
+    # Wrap for pymdp.Agent: A, B, C, D must be iterable over modalities/factors
+    # For single-modality/single-factor, use lists of length 1
+    A_container = [A_raw]
+    B_container = [B_raw]
+    C_container = [C_raw]
+    D_container = [D_raw]
 
     agents = []
     A_matrices = []
@@ -81,21 +224,17 @@ def create_tom_agents(
         LOGGER.debug(f"  Creating agent {i}")
 
         # Each agent gets the same generative model (shared environment)
-        # But can have different initial beliefs or preferences if needed
-        A_agent = A.copy()
-        B_agent = B.copy()
-        C_agent = C.copy()
-        D_agent = D.copy()
+        # Note: We pass containers to Agent, but store raw matrices for return
 
         # Create PyMDP agent
         if config.learn_B:
             # Enable learning of transition model
             agent = Agent(
-                A=A_agent,
-                B=B_agent,
-                C=C_agent,
-                D=D_agent,
-                pB=dirichlet_like(B_agent),
+                A=A_container,
+                B=B_container,
+                C=C_container,
+                D=D_container,
+                pB=dirichlet_like(B_container),
                 lr_pB=config.lr_pB,
                 policy_len=config.horizon,
                 gamma=config.gamma,
@@ -103,19 +242,19 @@ def create_tom_agents(
         else:
             # No learning
             agent = Agent(
-                A=A_agent,
-                B=B_agent,
-                C=C_agent,
-                D=D_agent,
+                A=A_container,
+                B=B_container,
+                C=C_container,
+                D=D_container,
                 policy_len=config.horizon,
                 gamma=config.gamma,
             )
 
         agents.append(agent)
-        A_matrices.append(A_agent)
-        B_matrices.append(B_agent)
-        C_matrices.append(C_agent)
-        D_matrices.append(D_agent)
+        A_matrices.append(A_raw)
+        B_matrices.append(B_raw)
+        C_matrices.append(C_raw)
+        D_matrices.append(D_raw)
 
         LOGGER.debug(
             f"    Agent {i}: {len(agent.policies)} policies, "

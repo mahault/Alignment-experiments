@@ -91,12 +91,12 @@ def rollout_multi_agent_lava(
     if use_F_prior:
         if tom_config is None:
             raise ValueError("tom_config required when use_F_prior=True")
-        from src.tom import run_tom_step_with_F_prior as tom_step_fn
+        from src.tom.si_tom_F_prior import run_tom_step_with_F_prior as tom_step_fn
         LOGGER.info(f"Using F-aware prior: κ={tom_config.kappa_prior}, β={tom_config.beta_joint_flex}")
     else:
         # Use standard ToM step
         try:
-            from tom.si_tom import run_tom_step as tom_step_fn
+            from src.tom.si_tom import run_tom_step as tom_step_fn
             LOGGER.info("Using standard ToM (no F-prior)")
         except ImportError:
             LOGGER.warning("Could not import run_tom_step, using placeholder")
