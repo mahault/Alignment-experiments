@@ -48,9 +48,18 @@ def validate_normalization(tensor: Tensor, axis: int = 1, tensor_name: str = "te
     # sum along the specified axis
     sums = jnp.sum(tensor, axis=axis)
 
+    # DEBUG: Convert to numpy for debugging
+    import numpy as np
+    sums_np = np.array(sums)
+    tensor_np = np.array(tensor)
+
+    print(f"[pymdp.validate_normalization] {tensor_name}, axis={axis}")
+    print(f"  tensor shape={tensor_np.shape}, dtype={tensor_np.dtype}")
+    print(f"  sums shape={sums_np.shape}, min={sums_np.min():.6f}, max={sums_np.max():.6f}")
+
     # check for zero-filled distributions
     eqx.error_if(sums, jnp.any(jnp.isclose(sums,0.0)), f"Please ensure that none of the distributions along {tensor_name}'s {axis}-th axis sum to zero...")
-    
+
     # check for unnormalized distributions (non-zero but not summing to 1)
     eqx.error_if(sums, jnp.any(~jnp.isclose(sums,1.0)), f"Please ensure that all distributions along {tensor_name}'s {axis}-th axis are properly normalised and sum to 1...")
 

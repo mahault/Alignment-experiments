@@ -514,7 +514,22 @@ class Agent(Module):
             num_iter=self.num_iter,
             method=self.inference_algo,
         )
-        
+
+        # DEBUG: Log shapes before vmap
+        import numpy as np
+        print("[Agent.infer_states] --- debug ---")
+        print(f"  type(observations): {type(observations)}, value: {observations}")
+        print(f"  type(o_vec): {type(o_vec)}, len: {len(o_vec)}")
+        for i, ov in enumerate(o_vec):
+            print(f"    o_vec[{i}] shape: {np.array(ov).shape}, dtype: {np.array(ov).dtype}")
+        print(f"  A len: {len(A)}")
+        for i, a in enumerate(A):
+            print(f"    A[{i}] shape: {np.array(a).shape}")
+        print(f"  self.B len: {len(self.B)}")
+        for i, b in enumerate(self.B):
+            print(f"    B[{i}] shape: {np.array(b).shape}")
+        print("[Agent.infer_states] --------------")
+
         output = vmap(infer_states)(
             A,
             self.B,
