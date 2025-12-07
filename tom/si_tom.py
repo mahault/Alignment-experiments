@@ -7,9 +7,64 @@ from typing import List, Dict, Any, Tuple
 import numpy as np
 
 from pymdp.agent import Agent
+import jax.numpy as jnp
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
+
+
+def lava_infer_states(
+    agent: Agent,
+    obs_idx: int,
+    qs_prev: Dict[str, Any] | None = None,
+    t: int = 0,
+) -> None:
+    """
+    Simple JAX state update for the lava corridor environment.
+
+    Assumptions:
+      - Single observation modality (index 0).
+      - Single hidden state factor (index 0).
+      - A[0].shape == (num_obs, num_states).
+      - D[0].shape == (num_states,).
+      - qs_prev[k]["qs"] (if provided) is a list with a 1D posterior for this factor.
+
+    We perform one-step Bayes update:
+
+        q(s) ∝ p(o | s) * p_prior(s)
+
+    where p_prior(s) is either:
+      - the previous posterior at time t-1 (if available), or
+      - the agent's initial prior D[0] (for t == 0 or if no q_prev).
+    """
+    A0 = agent.A[0]  # jnp.ndarray, shape (num_obs, num_states)
+    D0 = agent.D[0]  # jnp.ndarray, shape (num_states,)
+
+    # Choose prior: if we have a previous qs for this agent and t>0, use it;
+    # otherwise fall back to the initial D0.
+    if t > 0 and qs_prev is not None and "qs" in qs_prev and qs_prev["qs"]:
+        # qs_prev["qs"][0] should be a 1D array (num_states,)
+        prior = jnp.asarray(qs_prev["qs"][0])
+    else:
+        prior = D0
+
+    # Likelihood p(o | s) over s for this observation index
+    likelihood = A0[obs_idx]  # (num_states,)
+
+    # Unnormalized posterior: p(s | o) ∝ p(o | s) * p_prior(s)
+    unnorm = likelihood * prior
+    denom = jnp.sum(unnorm)
+
+    # Avoid divide-by-zero: if denom == 0, fall back to uniform.
+    qs0 = jnp.where(
+        denom > 0.0,
+        unnorm / denom,
+        jnp.ones_like(unnorm) / unnorm.shape[0],
+    )
+
+    # Store as the agent's posterior over the single state factor.
+    # This matches the format that Agent.infer_policies expects (list of arrays).
+    agent.qs = [qs0]
 
 
 def run_tom_step(
@@ -24,11 +79,11 @@ def run_tom_step(
     """
     Run a single Theory-of-Mind step for all K agents.
 
-    This is a factored-out version of the logic currently inside
+    This is a factored-out version of the logic originally inside an
     EmpatheticAgent._theory_of_mind, extended to also return:
 
-    - EFE_arr:  shape [K, num_policies]  (same as before)
-    - Emp_arr:  shape [K, num_policies]  (stub for empowerment, currently zeros)
+    - EFE_arr:  shape [K, num_policies]  (expected free energy per policy)
+    - Emp_arr:  shape [K, num_policies]  (placeholder for empowerment, currently zeros)
 
     Args
     ----
@@ -75,9 +130,20 @@ def run_tom_step(
     for k in range(K):
         LOGGER.debug(f"  Processing ToM agent {k}, observation={int(o[k])}")
 
-        # 1) Infer hidden states given observation
-        agents[k].infer_states([int(o[k])])
-        LOGGER.debug(f"    Agent {k} state inference complete")
+        # 1) Infer hidden states given observation using a direct JAX Bayes update.
+        #    We bypass pymdp.Agent.infer_states here because the JAX/vmap path
+        #    in v1.0.0_alpha has a batch-axis mismatch with the maths helpers.
+        obs_idx = int(o[k])
+
+        this_q_prev = qs_prev[k] if (qs_prev is not None and k < len(qs_prev)) else None
+        lava_infer_states(agents[k], obs_idx, qs_prev=this_q_prev, t=t)
+
+        LOGGER.debug(
+            f"    Agent {k} state inference complete; "
+            f"qs[0].shape={agents[k].qs[0].shape}, "
+            f"min={float(agents[k].qs[0].min()):.4f}, "
+            f"max={float(agents[k].qs[0].max()):.4f}"
+        )
 
         # 2) Optional learning of B
         if learn:
@@ -95,7 +161,10 @@ def run_tom_step(
         # 3) Infer policies & sample action
         agents[k].infer_policies()
         agents[k].sample_action()
-        LOGGER.debug(f"    Agent {k} policy inference complete, sampled action: {agents[k].action}")
+        LOGGER.debug(
+            f"    Agent {k} policy inference complete, "
+            f"sampled action: {agents[k].action}"
+        )
 
         # 4) Store results
         tom_results.append(
