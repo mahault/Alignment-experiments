@@ -24,7 +24,7 @@ from pathlib import Path
 repo_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(repo_root))
 
-from tom.si_tom import run_tom_step
+from src.tom.si_tom import run_tom_step
 from src.metrics.path_flexibility import (
     compute_F_arrays_for_policies,
     compute_q_pi_with_F_prior,

@@ -76,12 +76,12 @@ def run_tom_step(
         LOGGER.debug(f"  Processing ToM agent {k}, observation={int(o[k])}")
 
         # 1) Infer hidden states given observation
-        # Pass observation as array with factor dimension to match A/B's factor axis
-        import numpy as np
+        #
+        # IMPORTANT: pass a scalar observation index per modality, and let
+        # pymdp.Agent handle conversion to one-hot internally. This matches
+        # the standard (unbatched) use of get_likelihood_single_modality.
         obs_idx = int(o[k])
-        # Make it a 1D array of length = num_factors (here 1)
-        obs_idx_arr = np.array([obs_idx], dtype=np.int32)   # shape (1,)
-        agents[k].infer_states([obs_idx_arr], empirical_prior=None)
+        agents[k].infer_states([obs_idx], empirical_prior=None)
         LOGGER.debug(f"    Agent {k} state inference complete")
 
         # 2) Optional learning of B

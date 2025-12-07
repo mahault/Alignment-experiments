@@ -159,6 +159,13 @@ def create_tom_agents(
     LOGGER.info(f"    C_raw.shape = {C_raw.shape}")
     LOGGER.info(f"    D_raw.shape = {D_raw.shape}")
 
+    # Transpose B from env format (actions, state_from, state_to)
+    # to pymdp format (state_to, state_from, actions)
+    # This is required because pymdp indexes B as B[f][s_to, s_from, action]
+    if B_raw.ndim == 3:
+        B_raw = np.transpose(B_raw, (2, 1, 0))  # (5,12,12) -> (12,12,5)
+        LOGGER.info(f"    Transposed B_raw to pymdp format: {B_raw.shape}")
+
     # If env gave us an extra leading dim, squeeze it off
     # PyMDP expects (num_obs, num_states) not (1, num_obs, num_states)
     if A_raw.ndim == 3 and A_raw.shape[0] == 1:
@@ -176,24 +183,7 @@ def create_tom_agents(
         raise RuntimeError(f"Expected B_raw to be at least 3D after squeeze, got shape {B_raw.shape}")
 
     # --- Make B_raw pymdp-safe: normalise along axis=1 and remove zeros ---
-    B_raw = np.array(B_raw, dtype=float)
-
-    if B_raw.ndim < 2:
-        raise ValueError(f"B_raw must be at least 2D, got shape {B_raw.shape}")
-
-    # Step 1: fix completely zero distributions along axis=1
-    sums = B_raw.sum(axis=1, keepdims=True)   # sums over axis=1
-    zero_mask = np.isclose(sums, 0.0)
-
-    if np.any(zero_mask):
-        # Fill zero-sum slices with uniform mass along axis=1
-        s1 = B_raw.shape[1]
-        B_raw = np.where(zero_mask, 1.0 / s1, B_raw)
-
-    # Step 2: renormalize everything along axis=1 so sums == 1
-    sums = B_raw.sum(axis=1, keepdims=True)
-    # avoid division by zero just in case
-    B_raw = B_raw / np.where(sums == 0.0, 1.0, sums)
+    B_raw = normalize_B_for_pymdp(B_raw)
 
     # Step 3: sanity check BEFORE handing to Agent
     sums_check = B_raw.sum(axis=1)     # shape: same as B_raw with axis1 collapsed
@@ -207,10 +197,11 @@ def create_tom_agents(
             f"B_raw normalisation failed: axis1 sums in [{min_sum}, {max_sum}] (expected 1.0)"
         )
 
-    # Wrap for pymdp.Agent: A, B, C, D must be iterable over modalities/factors
-    # For single-modality/single-factor, use lists of length 1
-    A_container = [A_raw]
-    B_container = [B_raw]
+    # Wrap for pymdp.Agent: A, B, C, D must be iterable over modalities/factors.
+    # IMPORTANT: we keep A_raw, B_raw UNBATCHED here. Agent will manage any
+    # temporal/batch structure internally.
+    A_container = [A_raw]  # (num_obs, num_states)
+    B_container = [B_raw]  # (num_states, num_states, num_actions)
     C_container = [C_raw]
     D_container = [D_raw]
 
@@ -429,8 +420,8 @@ if __name__ == "__main__":
 
     print(f"\nCreated {len(agents)} agents")
     print(f"  Number of policies: {len(agents[0].policies)}")
-    print(f"  State space: {A[0][0].shape}")
-    print(f"  Action space: {B[0][0].shape[2]}")
+    print(f"  State space: {A[0].shape}")
+    print(f"  Action space: {B[0].shape[2]}")
     print(f"  Horizon: {config.horizon}")
 
     # Test shared outcomes
