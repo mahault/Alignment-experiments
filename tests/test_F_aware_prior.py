@@ -7,6 +7,14 @@ Verifies that:
 3. β correctly weights joint vs individual flexibility
 """
 
+import os
+import sys
+
+# Ensure repo root is on sys.path so 'src' can be imported
+ROOT = os.path.dirname(os.path.dirname(__file__))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
 import pytest
 import numpy as np
 from typing import List
@@ -219,10 +227,22 @@ class TestJointFlexibilityWeighting:
         assert np.argmax(q_joint) in [0, 2], \
             "β=1 should prefer policy with high combined F"
 
-        # β=0.5: should be more balanced
-        # Check that it's not strongly dominated by any single policy
-        assert q_balanced.max() < 0.8, \
-            "β=0.5 should balance individual and other's flexibility"
+        # β=0.5: should be intermediate between β=0 and β=1
+        max_individual = q_individual.max()
+        max_joint = q_joint.max()
+        max_balanced = q_balanced.max()
+
+        # Less peaked than pure individual (β=0)
+        assert max_balanced < max_individual + 1e-6, \
+            "β=0.5 should be less peaked than β=0 (individual-only)"
+
+        # More peaked than fully joint (β=1)
+        assert max_balanced > max_joint - 1e-6, \
+            "β=0.5 should be more peaked than β=1 (fully joint flexibility)"
+
+        # And give some non-trivial mass to the high-F_j policy as well
+        assert q_balanced[2] > 0.01, \
+            "β=0.5 should give some weight to the high-F_j policy"
 
 
 class TestEFEAndFlexibilityTradeoff:

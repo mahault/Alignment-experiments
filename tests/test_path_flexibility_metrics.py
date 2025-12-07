@@ -5,6 +5,14 @@ These tests use toy generative models to verify that E, R, and O behave as expec
 in known scenarios.
 """
 
+import os
+import sys
+
+# Ensure repo root is on sys.path so 'src' can be imported
+ROOT = os.path.dirname(os.path.dirname(__file__))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
 import pytest
 import numpy as np
 from typing import Any, List
