@@ -23,33 +23,7 @@ from typing import Dict, List, Tuple
 from tom.models import LavaModel, LavaAgent
 from tom.envs import LavaV2Env
 from tom.planning.si_empathy_lava import EmpathicLavaPlanner
-
-
-def manual_belief_update(obs_dict, A, D, num_states):
-    """
-    Perform manual Bayesian belief update.
-
-    Parameters
-    ----------
-    obs_dict : dict
-        Observation dictionary with "location_obs" key
-    A : np.ndarray
-        Observation model (num_obs, num_states)
-    D : np.ndarray
-        Prior over states (num_states,)
-    num_states : int
-        Number of states
-
-    Returns
-    -------
-    qs : np.ndarray
-        Posterior belief state (num_states,)
-    """
-    obs = int(np.asarray(obs_dict["location_obs"])[0])
-    likelihood = A[obs]
-    unnorm = likelihood * D
-    qs = unnorm / unnorm.sum()
-    return qs
+from tom.planning import safe_belief_update
 
 
 def get_other_agent_belief(obs_dict, num_states):
@@ -79,6 +53,23 @@ def get_other_agent_belief(obs_dict, num_states):
     qs_other = np.zeros(num_states)
     qs_other[other_obs] = 1.0
     return qs_other
+
+
+def manual_belief_update(obs_dict, A, D, num_states):
+    """
+    DEPRECATED: Use safe_belief_update instead.
+    This function is kept for backwards compatibility but will be removed.
+    """
+    obs = int(np.asarray(obs_dict["location_obs"])[0])
+    likelihood = A[obs]
+    unnorm = likelihood * D
+    denom = unnorm.sum()
+    if denom > 1e-10:
+        qs = unnorm / denom
+    else:
+        print(f"[WARN] manual_belief_update: denom={denom}, using uniform")
+        qs = np.ones(num_states) / num_states
+    return qs
 
 
 def run_episode(
@@ -113,10 +104,10 @@ def run_episode(
     num_states_j = model_j.num_states
 
     # Initial beliefs (own position + observed other position)
-    qs_i = manual_belief_update(obs[0], A_i, D_i, num_states_i)
+    qs_i, valid_i = safe_belief_update(obs[0], A_i, D_i, agent_name="agent_i", verbose=verbose)
     qs_j_observed = get_other_agent_belief(obs[0], num_states_j)
 
-    qs_j = manual_belief_update(obs[1], A_j, D_j, num_states_j)
+    qs_j, valid_j = safe_belief_update(obs[1], A_j, D_j, agent_name="agent_j", verbose=verbose)
     qs_i_observed = get_other_agent_belief(obs[1], num_states_i)
 
     if verbose:
@@ -128,6 +119,8 @@ def run_episode(
     timesteps_taken = 0
     trajectory_i = []
     trajectory_j = []
+    goal_reached_i = False
+    goal_reached_j = False
 
     action_names = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
 
@@ -136,8 +129,27 @@ def run_episode(
             print(f"\n--- Timestep {t} ---")
 
         # Both agents plan (using their belief about themselves and observation of other)
-        G_i, G_j_sim, G_social_i, q_pi_i, action_i = planner_i.plan(qs_i, qs_j_observed)
-        G_j, G_i_sim, G_social_j, q_pi_j, action_j = planner_j.plan(qs_j, qs_i_observed)
+        # But skip planning if agent has already reached their goal (absorbing state)
+        if not goal_reached_i:
+            G_i, G_j_sim, G_social_i, q_pi_i, action_i = planner_i.plan(qs_i, qs_j_observed)
+        else:
+            action_i = 4  # STAY - agent reached goal
+
+        if not goal_reached_j:
+            G_j, G_i_sim, G_social_j, q_pi_j, action_j = planner_j.plan(qs_j, qs_i_observed)
+        else:
+            action_j = 4  # STAY - agent reached goal
+
+        # DEBUG: At first timestep, verify empathy mechanism is working
+        if t == 0 and verbose:
+            print(f"\n  [DEBUG] Timestep 0 - Empathy Verification:")
+            print(f"    G_i (agent i's self-interest EFE): {G_i}")
+            print(f"    G_j_sim (agent i's model of j's EFE): {G_j_sim}")
+            print(f"    G_i - G_j_sim difference: {G_i - G_j_sim}")
+            print(f"    α_i={planner_i.alpha}, so G_social_i = G_i + {planner_i.alpha}*G_j_sim")
+            print(f"    G_social_i: {G_social_i}")
+            print(f"    → If G_i == G_j_sim, empathy has NO effect (just scales by 1+α)")
+            print()
 
         if verbose:
             print(f"  Agent i: α={planner_i.alpha}, action={action_names[action_i]}")
@@ -158,24 +170,45 @@ def run_episode(
         if info["collision"]:
             collisions.append(t)
 
-        # Update beliefs
+        # Update goal reached flags
+        if info["goal_reached"].get(0, False):
+            goal_reached_i = True
+        if info["goal_reached"].get(1, False):
+            goal_reached_j = True
+
+        # Update beliefs using safe Bayesian update
+        # Skip belief updates for agents that have reached their goals
         B_i = np.asarray(model_i.B["location_state"])
         B_j = np.asarray(model_j.B["location_state"])
 
+        # Predict next state based on action
         qs_i_pred = B_i[:, :, action_i] @ qs_i
         qs_j_pred = B_j[:, :, action_j] @ qs_j
 
+        # Update with observation (using safe update to avoid NaN)
         next_obs_i = int(np.asarray(next_obs[0]["location_obs"])[0])
         next_obs_j = int(np.asarray(next_obs[1]["location_obs"])[0])
 
         likelihood_i = A_i[next_obs_i]
         likelihood_j = A_j[next_obs_j]
 
-        qs_i = (likelihood_i * qs_i_pred)
-        qs_i = qs_i / qs_i.sum()
+        unnorm_i = likelihood_i * qs_i_pred
+        denom_i = unnorm_i.sum()
+        if denom_i > 1e-10:
+            qs_i = unnorm_i / denom_i
+        else:
+            if verbose:
+                print(f"  [WARN] Agent i: Bayes update failed (denom={denom_i:.6f}), using prior")
+            qs_i = qs_i_pred.copy()
 
-        qs_j = (likelihood_j * qs_j_pred)
-        qs_j = qs_j / qs_j.sum()
+        unnorm_j = likelihood_j * qs_j_pred
+        denom_j = unnorm_j.sum()
+        if denom_j > 1e-10:
+            qs_j = unnorm_j / denom_j
+        else:
+            if verbose:
+                print(f"  [WARN] Agent j: Bayes update failed (denom={denom_j:.6f}), using prior")
+            qs_j = qs_j_pred.copy()
 
         # Update observed other positions
         qs_j_observed = get_other_agent_belief(next_obs[0], num_states_j)
@@ -193,10 +226,15 @@ def run_episode(
         state = next_state
         timesteps_taken = t + 1
 
+        # Early termination: both agents reached goal, or collision/lava hit
+        if goal_reached_i and goal_reached_j:
+            if verbose:
+                print(f"\n  ✓ BOTH AGENTS REACHED THEIR GOALS!")
+            break
         if done:
             break
 
-    # Compile results
+    # Compile results using tracked flags (not just final info dict)
     result = {
         "layout": env.layout.name,
         "alpha_i": planner_i.alpha,
@@ -206,8 +244,8 @@ def run_episode(
         "collision_timesteps": collisions,
         "lava_hit_i": info.get("lava_hit", {}).get(0, False),
         "lava_hit_j": info.get("lava_hit", {}).get(1, False),
-        "goal_reached_i": info.get("goal_reached", {}).get(0, False),
-        "goal_reached_j": info.get("goal_reached", {}).get(1, False),
+        "goal_reached_i": goal_reached_i,
+        "goal_reached_j": goal_reached_j,
         "timesteps": timesteps_taken,
         "trajectory_i": trajectory_i,
         "trajectory_j": trajectory_j,
@@ -215,8 +253,8 @@ def run_episode(
 
     # Joint success: both reach goal without collision or lava
     result["joint_success"] = (
-        result["goal_reached_i"]
-        and result["goal_reached_j"]
+        goal_reached_i
+        and goal_reached_j
         and not result["collision"]
         and not result["lava_hit_i"]
         and not result["lava_hit_j"]
@@ -333,23 +371,30 @@ def main():
 
         layout_info = env.get_layout_info()
         print(f"  Width: {layout_info['width']}, Height: {layout_info['height']}")
-        print(f"  Goal: {layout_info['goal_pos']}")
+        print(f"  Goals: {layout_info['goal_positions']}")
+        print(f"  Start positions: {layout_info['start_positions']}")
 
-        # Create models (same for both agents)
-        # Pass safe_cells from environment layout to model
+        # Create models - each agent gets model with their own starting position AND goal
+        start_pos_i = layout_info['start_positions'][0]
+        start_pos_j = layout_info['start_positions'][1]
+        goal_pos_i = layout_info['goal_positions'][0]
+        goal_pos_j = layout_info['goal_positions'][1]
+
         model_i = LavaModel(
             width=env.width,
             height=env.height,
-            goal_x=env.goal_x,
-            goal_y=env.goal_y,
-            safe_cells=layout_info['safe_cells']
+            goal_x=goal_pos_i[0],
+            goal_y=goal_pos_i[1],
+            safe_cells=layout_info['safe_cells'],
+            start_pos=start_pos_i
         )
         model_j = LavaModel(
             width=env.width,
             height=env.height,
-            goal_x=env.goal_x,
-            goal_y=env.goal_y,
-            safe_cells=layout_info['safe_cells']
+            goal_x=goal_pos_j[0],
+            goal_y=goal_pos_j[1],
+            safe_cells=layout_info['safe_cells'],
+            start_pos=start_pos_j
         )
 
         for alpha_i, alpha_j in empathy_configs:
@@ -362,13 +407,20 @@ def main():
             planner_i = EmpathicLavaPlanner(agent_i, agent_j, alpha=alpha_i)
             planner_j = EmpathicLavaPlanner(agent_j, agent_i, alpha=alpha_j)
 
+            # Enable verbose for first wide corridor test with balanced empathy to debug
+            verbose_debug = (layout_name == "wide" and alpha_i == 0.5 and alpha_j == 0.5)
+
             # Run episode
-            result = run_episode(env, planner_i, planner_j, max_timesteps=max_timesteps, verbose=False)
+            result = run_episode(env, planner_i, planner_j, max_timesteps=max_timesteps, verbose=verbose_debug)
             all_results.append(result)
 
             # Print immediate feedback
             if result["joint_success"]:
-                print("✓ SUCCESS")
+                print(f"✓ JOINT SUCCESS (t={result['timesteps']})")
+            elif result["goal_reached_i"] and not result["goal_reached_j"]:
+                print("✓ PARTIAL (agent i only)")
+            elif result["goal_reached_j"] and not result["goal_reached_i"]:
+                print("✓ PARTIAL (agent j only)")
             elif result["collision"]:
                 print("✗ COLLISION")
             elif result["lava_hit_i"] or result["lava_hit_j"]:
@@ -382,12 +434,6 @@ def main():
 
     print("\n" + "=" * 100)
     print("EXPERIMENTS COMPLETE")
-    print("=" * 100)
-    print("\nKey Findings:")
-    print("1. Wide corridor: Agents with high empathy can coordinate to avoid collision")
-    print("2. Bottleneck: Requires even higher empathy for sequential navigation")
-    print("3. Asymmetric empathy: Altruist-selfish pairs often fail (exploitation)")
-    print("4. Symmetric high empathy: Best for joint success in coordinated environments")
     print("=" * 100)
 
 

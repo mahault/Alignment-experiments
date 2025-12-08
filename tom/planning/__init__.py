@@ -21,6 +21,8 @@ from .si_empathy_lava import (
     EmpathicLavaPlanner,
 )
 
+from .belief_utils import safe_belief_update
+
 __all__ = [
     # Phase 1: Single-agent
     "propagate_state",
@@ -32,4 +34,6 @@ __all__ = [
     "compute_empathic_G",
     "efe_empathic",
     "EmpathicLavaPlanner",
+    # Utilities
+    "safe_belief_update",
 ]

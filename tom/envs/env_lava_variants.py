@@ -28,8 +28,8 @@ class LavaLayout:
         Grid height
     safe_cells : List[Tuple[int, int]]
         List of (x, y) coordinates that are safe (not lava)
-    goal_pos : Tuple[int, int]
-        Goal position (x, y)
+    goal_positions : List[Tuple[int, int]]
+        Goal positions for each agent [(goal_0), (goal_1), ...]
     start_positions : List[Tuple[int, int]]
         Starting positions for agents
     name : str
@@ -38,7 +38,7 @@ class LavaLayout:
     width: int
     height: int
     safe_cells: List[Tuple[int, int]]
-    goal_pos: Tuple[int, int]
+    goal_positions: List[Tuple[int, int]]
     start_positions: List[Tuple[int, int]]
     name: str
 
@@ -60,8 +60,10 @@ def create_narrow_corridor(width: int = 6) -> LavaLayout:
     # All cells in middle row are safe
     safe_cells = [(x, safe_y) for x in range(width)]
 
-    # Goal at rightmost safe cell
-    goal_pos = (width - 1, safe_y)
+    # Each agent has goal at opposite end from their start
+    # Agent 0: starts left (0, 1), goal right (5, 1)
+    # Agent 1: starts right (5, 1), goal left (0, 1)
+    goal_positions = [(width - 1, safe_y), (0, safe_y)]
 
     # Agents start at opposite ends
     start_positions = [(0, safe_y), (width - 1, safe_y)]
@@ -70,7 +72,7 @@ def create_narrow_corridor(width: int = 6) -> LavaLayout:
         width=width,
         height=height,
         safe_cells=safe_cells,
-        goal_pos=goal_pos,
+        goal_positions=goal_positions,
         start_positions=start_positions,
         name="narrow_corridor"
     )
@@ -94,8 +96,10 @@ def create_wide_corridor(width: int = 6) -> LavaLayout:
     # All cells in safe rows
     safe_cells = [(x, y) for x in range(width) for y in safe_rows]
 
-    # Goal at top-right
-    goal_pos = (width - 1, 1)
+    # Each agent has goal in their own row at rightmost column
+    # Agent 0: starts (0, 1), goal (5, 1)
+    # Agent 1: starts (0, 2), goal (5, 2)
+    goal_positions = [(width - 1, 1), (width - 1, 2)]
 
     # Agents start at same x but different rows
     start_positions = [(0, 1), (0, 2)]
@@ -104,7 +108,7 @@ def create_wide_corridor(width: int = 6) -> LavaLayout:
         width=width,
         height=height,
         safe_cells=safe_cells,
-        goal_pos=goal_pos,
+        goal_positions=goal_positions,
         start_positions=start_positions,
         name="wide_corridor"
     )
@@ -138,8 +142,10 @@ def create_bottleneck(width: int = 8) -> LavaLayout:
             safe_cells.append((x, 1))
             safe_cells.append((x, 2))
 
-    # Goal at top-right
-    goal_pos = (width - 1, 1)
+    # Each agent has goal in their own row at rightmost column
+    # Agent 0: starts (0, 1), goal (7, 1)
+    # Agent 1: starts (0, 2), goal (7, 2)
+    goal_positions = [(width - 1, 1), (width - 1, 2)]
 
     # Agents start at left, different rows
     start_positions = [(0, 1), (0, 2)]
@@ -148,7 +154,7 @@ def create_bottleneck(width: int = 8) -> LavaLayout:
         width=width,
         height=height,
         safe_cells=safe_cells,
-        goal_pos=goal_pos,
+        goal_positions=goal_positions,
         start_positions=start_positions,
         name="bottleneck"
     )
@@ -181,8 +187,10 @@ def create_risk_reward(width: int = 8) -> LavaLayout:
         safe_cells.append((x, 1))
         safe_cells.append((x, 2))
 
-    # Goal at top-left (risky side)
-    goal_pos = (0, 0)
+    # Each agent has goal in their own row at leftmost column
+    # Agent 0: starts (7, 1), goal (0, 1) - can take risky row 0 or safe detour
+    # Agent 1: starts (7, 2), goal (0, 2) - same trade-off
+    goal_positions = [(0, 1), (0, 2)]
 
     # Agents start at right side
     start_positions = [(width - 1, 1), (width - 1, 2)]
@@ -191,7 +199,7 @@ def create_risk_reward(width: int = 8) -> LavaLayout:
         width=width,
         height=height,
         safe_cells=safe_cells,
-        goal_pos=goal_pos,
+        goal_positions=goal_positions,
         start_positions=start_positions,
         name="risk_reward"
     )

@@ -73,13 +73,11 @@ class LavaV2Env:
     def height(self):
         return self.layout.height
 
-    @property
-    def goal_x(self):
-        return self.layout.goal_pos[0]
-
-    @property
-    def goal_y(self):
-        return self.layout.goal_pos[1]
+    def get_goal(self, agent_id):
+        """Get goal position for a specific agent."""
+        if agent_id < len(self.layout.goal_positions):
+            return self.layout.goal_positions[agent_id]
+        return self.layout.goal_positions[0]  # Fallback to first goal
 
     def reset(self, key=None):
         """
@@ -156,7 +154,8 @@ class LavaV2Env:
         # Check for goal reached
         goal_reached = {}
         for agent_id, pos in next_pos.items():
-            goal_reached[agent_id] = (pos == self.layout.goal_pos)
+            agent_goal = self.get_goal(agent_id)
+            goal_reached[agent_id] = (pos == agent_goal)
 
         # Episode done if collision, lava hit, all reached goal, or max timesteps
         done = (
@@ -290,8 +289,10 @@ class LavaV2Env:
                     row.append("X")  # Collision
                 elif len(agents_here) == 1:
                     row.append(str(agents_here[0]))  # Agent ID
-                elif pos == self.layout.goal_pos:
-                    row.append("G")  # Goal
+                elif pos in self.layout.goal_positions:
+                    # Show which agent's goal this is
+                    goal_idx = self.layout.goal_positions.index(pos)
+                    row.append(f"G{goal_idx}")  # Goal for agent goal_idx
                 elif self._is_safe(pos):
                     row.append(".")  # Safe cell
                 else:
@@ -314,7 +315,8 @@ class LavaV2Env:
             "width": self.width,
             "height": self.height,
             "num_states": self.num_states,
-            "goal_pos": self.layout.goal_pos,
+            "goal_positions": self.layout.goal_positions,
             "safe_cells": self.layout.safe_cells,
+            "start_positions": self.layout.start_positions,
             "layout_name": self.layout.name,
         }

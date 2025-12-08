@@ -36,6 +36,8 @@ class LavaModel:
         Grid height (must be 3 for lava-safe-lava design)
     goal_x : int
         X-coordinate of goal
+    start_pos : tuple
+        Starting position (x, y) for this agent's prior
     A : dict
         Observation model {"location_obs": array}
     B : dict
@@ -50,6 +52,7 @@ class LavaModel:
     goal_x: int = None
     goal_y: int = None
     safe_cells: list = None  # Optional: List of (x,y) tuples that are safe
+    start_pos: tuple = None  # Optional: Starting position for this agent
 
     def __post_init__(self):
         if self.goal_x is None:
@@ -150,11 +153,15 @@ class LavaModel:
         return {"location_obs": jnp.array(C)}
 
     def _build_D(self):
-        """Build prior over initial state - uniform over safe starting positions."""
+        """Build prior over initial state - concentrated at agent's starting position."""
         D = np.zeros(self.num_states)
 
-        # Start at first safe cell (or can be customized)
-        if self.safe_cells:
+        # Use specified start_pos if provided, otherwise use first safe cell
+        if self.start_pos is not None:
+            start_x, start_y = self.start_pos
+            start_idx = start_y * self.width + start_x
+            D[start_idx] = 1.0
+        elif self.safe_cells:
             start_x, start_y = self.safe_cells[0]  # First safe cell
             start_idx = start_y * self.width + start_x
             D[start_idx] = 1.0
