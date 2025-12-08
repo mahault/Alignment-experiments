@@ -702,6 +702,258 @@ Experiment → rollout() → run_tom_step() → policy search (with optional F-p
 
 ---
 
+## Phase 1-6 Implementation Roadmap
+
+This project follows a **progressive complexity roadmap** to build up from single-agent planning to full multi-agent experiments with flexibility-aware priors. Each phase is designed to isolate specific capabilities and validate them before adding complexity.
+
+### Phase 1: Single-Agent TOM Planner (EFE-Only) ✅ IN PROGRESS
+
+**Goal**: Implement baseline active inference planner with **risk-based EFE only** (no empathy, no flexibility).
+
+**Components**:
+- ✅ `tom/planning/si_lava.py` - Single-agent planner with:
+  - `propagate_state()` - Forward belief propagation
+  - `compute_risk_G()` - Risk-based EFE computation
+  - `efe_risk_only()` - Policy posterior q(π) ∝ exp(-γG)
+  - `LavaPlanner` - Planner class for LavaAgent
+- ⏳ `scripts/run_lava_si.py` - Demo single-agent rollout
+- ⏳ Verify single-agent planning works correctly
+
+**Decision rule**:
+```
+G(π) = -E_qs[E_o[C(o)]]  (pragmatic value only)
+q(π) = softmax(-γ G(π))
+```
+
+**Test criteria**:
+- Agent successfully navigates lava corridor
+- Reaches goal state
+- Avoids lava cells
+- No crashes or numerical issues
+
+---
+
+### Phase 2: Empathic Planner (α Parameter) ✅ COMPLETED
+
+**Goal**: Add **empathy** to the planner—agent i weights agent j's EFE.
+
+**Components**:
+- ✅ `tom/planning/si_empathy_lava.py` - Empathic planner with:
+  - `EmpathicLavaPlanner` - Extends `LavaPlanner` with α parameter
+  - `compute_empathic_G()` - G_social = G_i + α·G_j
+  - `compute_other_agent_G()` - Theory of Mind simulation of other agent
+  - `efe_empathic()` - Empathy-weighted policy posterior
+- ✅ `scripts/run_lava_empathy.py` - Demo two-agent coordination
+  - Tests α=0.0 (selfish), α=0.5 (balanced), α=1.0 (prosocial)
+  - Shows collision avoidance and joint goal achievement
+
+**Decision rule**:
+```
+G_social^i(π) = G_i(π) + α · G_j(π)
+q(π) = softmax(-γ G_social(π))
+```
+
+**Parameters**:
+- α ∈ [0, 1]: Empathy weight (0 = selfish, 1 = fully prosocial)
+
+**Test criteria**:
+- α = 0 recovers Phase 1 behavior
+- α > 0 shows coordinated behavior
+- Agents avoid collisions
+- Both agents reach goals
+
+---
+
+### Phase 3: F-Aware Integration (κ, β Parameters) ⏳ PENDING
+
+**Goal**: Integrate **flexibility-aware policy prior** with empathy planner.
+
+**Components**:
+- `tom/planning/si_F_aware_lava.py` - F-aware planner with:
+  - `FAwareLavaPlanner` - Extends `EmpathicLavaPlanner` with κ, β
+  - `compute_F_prior()` - Flexibility prior over policies
+  - `compute_joint_objective()` - J_i = G_i + α·G_j - (κ/γ)[F_i + β·F_j]
+
+**Decision rule**:
+```
+J_i(π) = G_i(π) + α·G_j(π) - (κ/γ)[F_i(π) + β·F_j(π)]
+q(π) = softmax(-γ J_i(π))
+```
+
+**Parameters**:
+- α: Empathy weight (from Phase 2)
+- κ ≥ 0: Flexibility preference strength (0 = no F-prior)
+- β ∈ [0, 1]: Joint flexibility weight (0 = only own F, 1 = equal weighting)
+
+**Test criteria**:
+- κ = 0 recovers Phase 2 behavior
+- κ > 0 biases toward high-F policies
+- β controls individual vs joint flexibility tradeoff
+
+---
+
+### Phase 4: Multi-Agent TOM Rollout ⏳ PENDING
+
+**Goal**: Implement full **multi-agent rollouts** with all three planners (Phase 1-3).
+
+**Components**:
+- `scripts/run_lava_multiagent.py` - Multi-agent rollout script
+- Integration with `LavaV1Env` for collision/lava detection
+- Belief tracking and synchronization
+- Policy selection with optional F-prior
+
+**Features**:
+- Two-agent lava corridor navigation
+- Collision detection and logging
+- Success tracking (individual and joint)
+- Comprehensive metrics logging
+
+**Test criteria**:
+- Both agents complete episodes without crashes
+- Metrics are logged correctly (G_i, G_j, F_i, F_j, actions, beliefs)
+- Collision/lava/success flags are accurate
+
+---
+
+### Phase 5: Experiments 1 & 2 ⏳ PENDING
+
+**Goal**: Run full experiments to test **two key hypotheses**.
+
+#### Experiment 1: Natural F-EFE Correlation
+
+**Hypothesis**: High joint flexibility naturally correlates with low joint EFE (no explicit F-prior needed).
+
+**Conditions**:
+1. **Baseline (α=0, κ=0)**: Pure selfish EFE minimization
+2. **Empathy-only (α>0, κ=0)**: Empathy without flexibility prior
+
+**Metrics**:
+- Correlation: F_joint vs G_joint across all considered policies
+- Behavioral: Collision rate, goal achievement, bottleneck usage
+- Policy selection: Do agents naturally choose high-F policies?
+
+**Script**: `experiments/exp1_flex_vs_efe.py`
+
+#### Experiment 2: F-Aware Prior Effectiveness
+
+**Hypothesis**: Explicit F-aware prior improves coordination and reduces catastrophic failures.
+
+**Conditions**:
+1. **No F-prior (κ=0)**: Baseline from Exp 1
+2. **Small F-prior (κ=0.5)**: Moderate flexibility bias
+3. **Medium F-prior (κ=1.0)**: Balanced F-EFE tradeoff
+4. **Large F-prior (κ=2.0)**: Strong flexibility preference
+
+**Metrics**:
+- F vs EFE tradeoff: Plot F(π_chosen) vs G(π_chosen) for each κ
+- Safety: Collision rates, lava hits
+- Efficiency: Goal achievement time, path length
+- Resilience: Recovery from perturbations (layout changes mid-episode)
+
+**Script**: `experiments/exp2_flex_prior.py`
+
+---
+
+### Phase 6: Documentation & Cleanup ⏳ PENDING
+
+**Goal**: Finalize documentation, create analysis notebooks, prepare for publication.
+
+**Components**:
+- Update all docstrings and type hints
+- Create comprehensive tutorial notebooks
+- Write technical report (methods, results, discussion)
+- Generate publication-quality plots
+- Create demo videos/GIFs of agent behavior
+- Archive experiment results and configurations
+
+**Deliverables**:
+- `notebooks/tutorial_single_agent.ipynb`
+- `notebooks/tutorial_multiagent.ipynb`
+- `notebooks/analysis_exp1.ipynb`
+- `notebooks/analysis_exp2.ipynb`
+- `docs/technical_report.pdf`
+- `results/` directory with all experiment outputs
+
+---
+
+## Experimental Design Matrix
+
+To ensure proper **condition comparison** and **hypothesis testing**, we structure experiments as follows:
+
+### Experiment 1: Testing Natural F-EFE Correlation
+
+| Condition | α (Empathy) | κ (F-prior) | Purpose |
+|-----------|-------------|-------------|---------|
+| Baseline  | 0.0         | 0.0         | Pure selfish EFE (no empathy, no F) |
+| Empathy   | 0.5, 1.0    | 0.0         | Does empathy alone lead to high F? |
+
+**Analysis**:
+- **Correlation analysis**: Scatter plot F_joint vs G_joint for all policies considered during planning
+- **Policy selection**: Do selected policies cluster in high-F, low-G region?
+- **Behavioral metrics**: Compare collision rates, goal achievement across conditions
+- **Statistical tests**: Pearson correlation F vs G, t-test between conditions
+
+**Expected outcomes**:
+- If natural correlation exists: Empathy condition should show negative F-G correlation
+- If no natural correlation: Need explicit F-prior (Experiment 2)
+
+---
+
+### Experiment 2: Testing F-Aware Prior Effectiveness
+
+| Condition | α (Empathy) | κ (F-prior) | β (Joint F) | Purpose |
+|-----------|-------------|-------------|-------------|---------|
+| No F      | 0.5         | 0.0         | N/A         | Baseline (same as Exp 1 Empathy) |
+| Small F   | 0.5         | 0.5         | 0.5         | Moderate flexibility bias |
+| Medium F  | 0.5         | 1.0         | 0.5         | Balanced F-EFE tradeoff |
+| Large F   | 0.5         | 2.0         | 0.5         | Strong flexibility preference |
+
+**Analysis**:
+- **F vs EFE tradeoff**: Plot F(π_chosen) vs G(π_chosen) for each κ
+  - Expect: As κ increases, F↑ and G↑ (sacrificing EFE for flexibility)
+- **Safety metrics**: Collision rate, lava hit rate (expect: decrease with κ)
+- **Efficiency metrics**: Goal achievement time, path length (expect: increase with κ)
+- **Resilience test**: Introduce layout perturbations mid-episode, measure recovery success
+- **Statistical tests**: ANOVA across κ conditions, post-hoc pairwise comparisons
+
+**Expected outcomes**:
+- κ > 0 should reduce catastrophic failures (collisions, lava)
+- Trade-off: Higher κ → safer but slower/less efficient
+- Resilience: Higher κ → better recovery from perturbations
+
+---
+
+### Metrics Logged Per Episode
+
+**Per-policy metrics** (during planning):
+- G_i(π), G_j(π), G_joint(π) - Expected Free Energy
+- F_i(π), F_j(π), F_joint(π) - Path Flexibility
+  - E(π) - Empowerment component
+  - R(π) - Returnability component
+  - O(π) - Overlap component
+- q(π) - Policy posterior
+- Selected: Boolean flag for chosen policy
+
+**Per-timestep metrics** (during execution):
+- Observations: o_i, o_j
+- Beliefs: qs_i, qs_j
+- Actions: a_i, a_j
+- Positions: (x_i, y_i), (x_j, y_j)
+
+**Episode-level outcomes**:
+- Success flags: goal_i, goal_j, goal_joint
+- Failure flags: collision, lava_hit_i, lava_hit_j
+- Efficiency: timesteps_to_goal, path_length
+- Safety: num_close_calls (near-collisions), bottleneck_usage
+
+**Saved outputs**:
+- `results/exp1/metrics.pkl` - All per-policy and per-timestep data
+- `results/exp1/behavioral_stats.json` - Aggregated episode outcomes
+- `results/exp2/metrics_kappa_{k}.pkl` - Per-condition data
+- `results/exp2/comparison_stats.json` - Cross-condition comparison
+
+---
+
 ## Implementation Status
 
 ### ⭐ TOM-Style JAX Architecture (Ready to Use)

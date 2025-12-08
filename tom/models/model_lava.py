@@ -178,16 +178,30 @@ class LavaAgent:
         """
         Build policy set for lava corridor.
 
+        For Phase 1, we use repeated primitive actions rather than
+        enumerating all sequences (which explodes for long horizons).
+
         Returns
         -------
         policies : jnp.ndarray
             Shape (num_policies, horizon, num_state_factors)
-            Each policy applies one action to the location state factor
+            Each policy repeats a single action for the full horizon
         """
         num_actions = 5  # UP, DOWN, LEFT, RIGHT, STAY
         num_state_factors = 1  # Only location_state
 
-        # Each policy: single action for one timestep
-        # Shape: (5, 1, 1)
-        policies = jnp.arange(num_actions)[:, None, None]
+        if self.horizon == 1:
+            # Single timestep: 5 policies
+            policies = jnp.arange(num_actions)[:, None, None]
+        else:
+            # Multi-timestep: repeat each primitive action for full horizon
+            # This gives 5 policies total (not 5^H)
+            policies_list = []
+            for action in range(num_actions):
+                # Repeat this action for all timesteps
+                policy = jnp.full((self.horizon, num_state_factors), action, dtype=jnp.int32)
+                policies_list.append(policy)
+
+            policies = jnp.stack(policies_list, axis=0)  # (5, horizon, 1)
+
         return policies
