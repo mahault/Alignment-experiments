@@ -132,8 +132,26 @@ class LavaModel:
         return {"location_state": jnp.array(B)}
 
     def _build_C(self):
-        """Build preference model - goal positive, lava negative."""
+        """
+        Build preference model - goal positive, lava CATASTROPHIC.
+
+        Preferences:
+        - Goal: High reward (+10)
+        - Lava: CATASTROPHIC penalty (-100, makes lava absolutely unacceptable)
+        - Safe cells: Distance shaping + small time cost
+
+        The large lava penalty ensures agents never willingly risk lava.
+        """
         C = np.zeros(self.num_obs)
+
+        # Distance-based shaping weight (0 = no shaping, >0 = reward proximity)
+        lambda_dist = 0.5  # Small shaping to encourage progress toward goal
+
+        # Time cost (small penalty per timestep for not being at goal)
+        time_cost = 0.1  # Encourages reaching goal faster
+
+        # Lava penalty (CATASTROPHIC - makes lava absolutely unacceptable)
+        lava_penalty = -100.0  # Was -10.0, now -100.0 to make lava truly catastrophic
 
         for s in range(self.num_states):
             y = s // self.width
@@ -141,14 +159,17 @@ class LavaModel:
             pos = (x, y)
 
             if pos not in self.safe_cells_set:
-                # Lava: very low preference
-                C[s] = -10.0
+                # Lava: CATASTROPHIC penalty - never worth risking
+                C[s] = lava_penalty
             elif x == self.goal_x and y == self.goal_y:
-                # Goal: high preference
+                # Goal: high preference (no time cost here)
                 C[s] = 10.0
             else:
-                # Safe corridor: neutral
-                C[s] = 0.0
+                # Safe corridor: small shaping based on distance to goal
+                manhattan_dist = abs(x - self.goal_x) + abs(y - self.goal_y)
+
+                # Reward getting closer to goal + small time penalty for stalling
+                C[s] = -lambda_dist * manhattan_dist - time_cost
 
         return {"location_obs": jnp.array(C)}
 
@@ -211,30 +232,26 @@ class LavaAgent:
         """
         Build policy set for lava corridor.
 
-        For Phase 1, we use repeated primitive actions rather than
-        enumerating all sequences (which explodes for long horizons).
+        Creates one policy per primitive action with horizon=1.
+        This is the rolling horizon approach used in sophisticated inference:
+        - Tree search handles multi-step planning
+        - Policies are just single-timestep primitive actions
+        - Agent replans after each action
 
         Returns
         -------
         policies : jnp.ndarray
             Shape (num_policies, horizon, num_state_factors)
-            Each policy repeats a single action for the full horizon
+            For horizon=1: (5, 1, 1) - one policy per action
         """
         num_actions = 5  # UP, DOWN, LEFT, RIGHT, STAY
         num_state_factors = 1  # Only location_state
 
-        if self.horizon == 1:
-            # Single timestep: 5 policies
-            policies = jnp.arange(num_actions)[:, None, None]
-        else:
-            # Multi-timestep: repeat each primitive action for full horizon
-            # This gives 5 policies total (not 5^H)
-            policies_list = []
-            for action in range(num_actions):
-                # Repeat this action for all timesteps
-                policy = jnp.full((self.horizon, num_state_factors), action, dtype=jnp.int32)
-                policies_list.append(policy)
+        # Create one policy per primitive action (rolling horizon approach)
+        # Shape: (num_actions, 1, num_state_factors)
+        policies = jnp.zeros((num_actions, 1, num_state_factors), dtype=jnp.int32)
 
-            policies = jnp.stack(policies_list, axis=0)  # (5, horizon, 1)
+        for i in range(num_actions):
+            policies = policies.at[i, 0, 0].set(i)
 
         return policies

@@ -19,11 +19,30 @@ if ROOT not in sys.path:
 import numpy as np
 import jax.random as jr
 from typing import Dict, List, Tuple
+import pandas as pd
+from datetime import datetime
 
 from tom.models import LavaModel, LavaAgent
 from tom.envs import LavaV2Env
 from tom.planning.si_empathy_lava import EmpathicLavaPlanner
 from tom.planning import safe_belief_update
+
+
+def describe_policy(policy_idx, num_policies):
+    """
+    Describe what a policy index means.
+
+    For horizon=1 (rolling horizon approach):
+    - 0: UP
+    - 1: DOWN
+    - 2: LEFT
+    - 3: RIGHT
+    - 4: STAY
+    """
+    action_names = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
+    if policy_idx < len(action_names):
+        return action_names[policy_idx]
+    return f"Policy{policy_idx}"
 
 
 def get_other_agent_belief(obs_dict, num_states):
@@ -142,13 +161,47 @@ def run_episode(
 
         # DEBUG: At first timestep, verify empathy mechanism is working
         if t == 0 and verbose:
-            print(f"\n  [DEBUG] Timestep 0 - Empathy Verification:")
-            print(f"    G_i (agent i's self-interest EFE): {G_i}")
-            print(f"    G_j_sim (agent i's model of j's EFE): {G_j_sim}")
-            print(f"    G_i - G_j_sim difference: {G_i - G_j_sim}")
-            print(f"    α_i={planner_i.alpha}, so G_social_i = G_i + {planner_i.alpha}*G_j_sim")
-            print(f"    G_social_i: {G_social_i}")
-            print(f"    → If G_i == G_j_sim, empathy has NO effect (just scales by 1+α)")
+            print(f"\n  [DEBUG] Timestep 0 - Empathy & Policy Verification:")
+            print(f"    Number of policies being evaluated: {len(G_i)}")
+            print(f"    Agent i (α={planner_i.alpha}):")
+            print(f"      G_i (self-interest):  {G_i}")
+            print(f"      G_j_sim (ToM of j):   {G_j_sim}")
+            print(f"      G_social_i (mixed):   {G_social_i}")
+            print(f"      Difference (G_i - G_j_sim): {G_i - G_j_sim}")
+            if planner_i.alpha == 0:
+                print(f"      → SELFISH: argmin(G_i) = {np.argmin(G_i)}, chosen policy index = {np.argmin(G_i)}, first action = {action_i} ({action_names[action_i]})")
+            else:
+                print(f"      → EMPATHIC: argmin(G_i) = {np.argmin(G_i)}, argmin(G_social) = {np.argmin(G_social_i)}, chosen = {action_i} ({action_names[action_i]})")
+
+            print(f"    Agent j (α={planner_j.alpha}):")
+            print(f"      G_j (self-interest):  {G_j}")
+            print(f"      G_i_sim (ToM of i):   {G_i_sim}")
+            print(f"      G_social_j (mixed):   {G_social_j}")
+            print(f"      Difference (G_j - G_i_sim): {G_j - G_i_sim}")
+            if planner_j.alpha == 0:
+                print(f"      → SELFISH: argmin(G_j) = {np.argmin(G_j)}, chosen action = {action_j}")
+            else:
+                print(f"      → EMPATHIC: argmin(G_j) = {np.argmin(G_j)}, argmin(G_social) = {np.argmin(G_social_j)}, chosen = {action_j}")
+
+            # Check if empathy changes policy choice
+            selfish_choice_i = np.argmin(G_i)
+            empathic_choice_i = np.argmin(G_social_i)
+            selfish_choice_j = np.argmin(G_j)
+            empathic_choice_j = np.argmin(G_social_j)
+
+            # Show policy descriptions
+            print(f"\n      Policy choices:")
+            print(f"        Selfish i would choose: policy {selfish_choice_i} ({describe_policy(selfish_choice_i, len(G_i))})")
+            print(f"        Empathic i chose: policy {empathic_choice_i} ({describe_policy(empathic_choice_i, len(G_i))})")
+            print(f"        Selfish j would choose: policy {selfish_choice_j} ({describe_policy(selfish_choice_j, len(G_j))})")
+            print(f"        Empathic j chose: policy {empathic_choice_j} ({describe_policy(empathic_choice_j, len(G_j))})")
+
+            if selfish_choice_i != empathic_choice_i:
+                print(f"\n      ⚠️  EMPATHY CHANGES i's POLICY: {describe_policy(selfish_choice_i, len(G_i))} → {describe_policy(empathic_choice_i, len(G_i))}")
+            if selfish_choice_j != empathic_choice_j:
+                print(f"      ⚠️  EMPATHY CHANGES j's POLICY: {describe_policy(selfish_choice_j, len(G_j))} → {describe_policy(empathic_choice_j, len(G_j))}")
+            if selfish_choice_i == empathic_choice_i and selfish_choice_j == empathic_choice_j:
+                print(f"\n      → Empathy doesn't change policies (environment may be too permissive)")
             print()
 
         if verbose:
@@ -343,7 +396,7 @@ def main():
     print("=" * 100)
 
     # Experiment configuration
-    layouts_to_test = ["wide", "bottleneck"]  # Start with these, add narrow/risk_reward later
+    layouts_to_test = ["wide", "bottleneck", "crossed_goals"]  # Added crossed_goals
     empathy_configs = [
         (0.0, 0.0),  # Both selfish
         (0.5, 0.5),  # Both balanced
@@ -352,8 +405,8 @@ def main():
         (0.0, 1.0),  # Asymmetric: i selfish, j altruist
     ]
 
-    horizon = 5
-    gamma = 8.0
+    # Planning parameters
+    gamma = 16.0  # Inverse temperature (higher = more decisive policy selection)
     max_timesteps = 25
 
     all_results = []
@@ -366,11 +419,21 @@ def main():
             env = LavaV2Env(layout_name="wide", width=6, num_agents=2, timesteps=max_timesteps)
         elif layout_name == "bottleneck":
             env = LavaV2Env(layout_name="bottleneck", width=8, num_agents=2, timesteps=max_timesteps)
+        elif layout_name == "crossed_goals":
+            env = LavaV2Env(layout_name="crossed_goals", width=6, num_agents=2, timesteps=max_timesteps)
         else:
             env = LavaV2Env(layout_name=layout_name, num_agents=2, timesteps=max_timesteps)
 
         layout_info = env.get_layout_info()
+
+        # Use horizon=1 (rolling horizon approach)
+        # The policy set contains one policy per primitive action (5 policies total)
+        # Multi-step planning is handled by replanning after each action
+        # This matches the approach used in the TOM collision avoidance examples
+        horizon = 1
+
         print(f"  Width: {layout_info['width']}, Height: {layout_info['height']}")
+        print(f"  Planning horizon: {horizon} (rolling horizon - replan each step)")
         print(f"  Goals: {layout_info['goal_positions']}")
         print(f"  Start positions: {layout_info['start_positions']}")
 
@@ -407,8 +470,15 @@ def main():
             planner_i = EmpathicLavaPlanner(agent_i, agent_j, alpha=alpha_i)
             planner_j = EmpathicLavaPlanner(agent_j, agent_i, alpha=alpha_j)
 
-            # Enable verbose for first wide corridor test with balanced empathy to debug
-            verbose_debug = (layout_name == "wide" and alpha_i == 0.5 and alpha_j == 0.5)
+            # Enable verbose for specific tests to debug empathy
+            # - Crossed goals with asymmetric empathy (most interesting - must coordinate!)
+            # - Bottleneck with asymmetric empathy (coordination required)
+            # - Wide with balanced empathy (sanity check)
+            verbose_debug = (
+                (layout_name == "crossed_goals" and alpha_i != alpha_j) or  # Asymmetric crossed
+                (layout_name == "bottleneck" and alpha_i != alpha_j) or  # Asymmetric bottleneck
+                (layout_name == "wide" and alpha_i == 0.5 and alpha_j == 0.5)  # Baseline check
+            )
 
             # Run episode
             result = run_episode(env, planner_i, planner_j, max_timesteps=max_timesteps, verbose=verbose_debug)
@@ -435,6 +505,52 @@ def main():
     print("\n" + "=" * 100)
     print("EXPERIMENTS COMPLETE")
     print("=" * 100)
+
+    # Save results to CSV
+    save_results_to_csv(all_results)
+
+
+def save_results_to_csv(results: List[Dict]):
+    """Save experimental results to timestamped CSV file."""
+    # Create results directory if it doesn't exist
+    results_dir = os.path.join(ROOT, "results")
+    os.makedirs(results_dir, exist_ok=True)
+
+    # Generate timestamp for unique filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_path = os.path.join(results_dir, f"empathy_experiments_{timestamp}.csv")
+
+    # Convert results to DataFrame
+    df = pd.DataFrame(results)
+
+    # Reorder columns for readability
+    column_order = [
+        "layout", "alpha_i", "alpha_j",
+        "joint_success", "goal_reached_i", "goal_reached_j",
+        "collision", "num_collisions",
+        "lava_hit_i", "lava_hit_j",
+        "timesteps",
+        "collision_timesteps", "trajectory_i", "trajectory_j"
+    ]
+
+    # Only include columns that exist
+    column_order = [col for col in column_order if col in df.columns]
+    df = df[column_order]
+
+    # Save to CSV
+    df.to_csv(csv_path, index=False)
+
+    print(f"\n📊 Results saved to: {csv_path}")
+    print(f"   Total episodes: {len(results)}")
+    print(f"   Joint success rate: {df['joint_success'].mean():.1%}")
+    print(f"   Collision rate: {df['collision'].mean():.1%}")
+
+    # Summary by layout and empathy
+    print(f"\n📈 Summary by layout:")
+    for layout in df['layout'].unique():
+        layout_df = df[df['layout'] == layout]
+        print(f"   {layout.upper()}: {layout_df['joint_success'].mean():.1%} success, "
+              f"{layout_df['collision'].mean():.1%} collision")
 
 
 if __name__ == "__main__":

@@ -160,9 +160,46 @@ def create_bottleneck(width: int = 8) -> LavaLayout:
     )
 
 
+def create_crossed_goals(width: int = 6) -> LavaLayout:
+    """
+    Variant 4: Crossed goals - agents must swap lanes.
+
+    Layout:
+    ~ ~ ~ ~ ~ ~
+    0 . . . . G1  (agent 0 starts row 1, needs goal at row 2)
+    1 . . . . G0  (agent 1 starts row 2, needs goal at row 1)
+    ~ ~ ~ ~ ~ ~
+
+    Forces true coordination: agents must cross paths or take turns.
+    This makes empathy critical - selfish agents will collide.
+    """
+    height = 4
+    safe_rows = [1, 2]
+
+    # All cells in safe rows
+    safe_cells = [(x, y) for x in range(width) for y in safe_rows]
+
+    # SWAPPED goals: agent 0 needs to reach opposite lane
+    # Agent 0: starts (0, 1), goal (5, 2) - must cross UP
+    # Agent 1: starts (0, 2), goal (5, 1) - must cross DOWN
+    goal_positions = [(width - 1, 2), (width - 1, 1)]  # Swapped!
+
+    # Agents start at same x but different rows
+    start_positions = [(0, 1), (0, 2)]
+
+    return LavaLayout(
+        width=width,
+        height=height,
+        safe_cells=safe_cells,
+        goal_positions=goal_positions,
+        start_positions=start_positions,
+        name="crossed_goals"
+    )
+
+
 def create_risk_reward(width: int = 8) -> LavaLayout:
     """
-    Variant 4: Risky fast path vs safe slow detour.
+    Variant 5: Risky fast path vs safe slow detour.
 
     Layout:
     G . . . . . . .  (risky path - narrow, goal nearby)
@@ -210,6 +247,7 @@ LAYOUTS = {
     "narrow": create_narrow_corridor,
     "wide": create_wide_corridor,
     "bottleneck": create_bottleneck,
+    "crossed_goals": create_crossed_goals,
     "risk_reward": create_risk_reward,
 }
 
