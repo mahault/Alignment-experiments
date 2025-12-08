@@ -336,8 +336,21 @@ def main():
         print(f"  Goal: {layout_info['goal_pos']}")
 
         # Create models (same for both agents)
-        model_i = LavaModel(width=env.width, height=env.height, goal_x=env.goal_x)
-        model_j = LavaModel(width=env.width, height=env.height, goal_x=env.goal_x)
+        # Pass safe_cells from environment layout to model
+        model_i = LavaModel(
+            width=env.width,
+            height=env.height,
+            goal_x=env.goal_x,
+            goal_y=env.goal_y,
+            safe_cells=layout_info['safe_cells']
+        )
+        model_j = LavaModel(
+            width=env.width,
+            height=env.height,
+            goal_x=env.goal_x,
+            goal_y=env.goal_y,
+            safe_cells=layout_info['safe_cells']
+        )
 
         for alpha_i, alpha_j in empathy_configs:
             print(f"\n  Testing α_i={alpha_i:.1f}, α_j={alpha_j:.1f}...", end=" ")

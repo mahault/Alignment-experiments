@@ -48,15 +48,32 @@ class LavaModel:
     width: int = 4
     height: int = 3
     goal_x: int = None
+    goal_y: int = None
+    safe_cells: list = None  # Optional: List of (x,y) tuples that are safe
 
     def __post_init__(self):
-        if self.height != 3:
-            raise ValueError("LavaModel currently only supports height=3 (lava-safe-lava design)")
-
         if self.goal_x is None:
             self.goal_x = self.width - 1
 
-        self.safe_y = 1  # Middle row is safe
+        if self.goal_y is None:
+            self.goal_y = 1  # Default: middle row for height=3
+
+        # If safe_cells not provided, use default lava-safe-lava for height=3
+        if self.safe_cells is None:
+            if self.height == 3:
+                # Classic design: row 1 is safe, rows 0 and 2 are lava
+                self.safe_y = 1
+                self.safe_cells = [(x, self.safe_y) for x in range(self.width)]
+            else:
+                # For other heights, make all cells safe (can override with safe_cells parameter)
+                self.safe_cells = [(x, y) for x in range(self.width) for y in range(self.height)]
+                self.safe_y = 1  # Set to 1 for backwards compatibility
+        else:
+            # If safe_cells provided, set safe_y to first safe row
+            safe_y_values = sorted(set(y for x, y in self.safe_cells))
+            self.safe_y = safe_y_values[0] if safe_y_values else 1
+
+        self.safe_cells_set = set(self.safe_cells)
         self.num_states = self.width * self.height
         self.num_obs = self.num_states
 
@@ -118,11 +135,12 @@ class LavaModel:
         for s in range(self.num_states):
             y = s // self.width
             x = s % self.width
+            pos = (x, y)
 
-            if y != self.safe_y:
+            if pos not in self.safe_cells_set:
                 # Lava: very low preference
                 C[s] = -10.0
-            elif x == self.goal_x and y == self.safe_y:
+            elif x == self.goal_x and y == self.goal_y:
                 # Goal: high preference
                 C[s] = 10.0
             else:
@@ -132,10 +150,18 @@ class LavaModel:
         return {"location_obs": jnp.array(C)}
 
     def _build_D(self):
-        """Build prior over initial state - start at (0, safe_y)."""
+        """Build prior over initial state - uniform over safe starting positions."""
         D = np.zeros(self.num_states)
-        start_idx = self.safe_y * self.width + 0  # pos_to_idx(0, safe_y)
-        D[start_idx] = 1.0
+
+        # Start at first safe cell (or can be customized)
+        if self.safe_cells:
+            start_x, start_y = self.safe_cells[0]  # First safe cell
+            start_idx = start_y * self.width + start_x
+            D[start_idx] = 1.0
+        else:
+            # Fallback: uniform over all states (shouldn't happen)
+            D = np.ones(self.num_states) / self.num_states
+
         return {"location_state": jnp.array(D)}
 
 

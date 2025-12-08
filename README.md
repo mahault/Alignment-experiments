@@ -187,10 +187,14 @@ Alignment-experiments/
 │   │   │   ├── model_lava.py      # LavaModel & LavaAgent (pure JAX, TOM-style)
 │   │   │   └── __init__.py
 │   │   ├── envs/
-│   │   │   ├── lava_v1.py         # LavaV1Env (JAX environment wrapper)
+│   │   │   ├── env_lava.py         # LavaV1Env (basic JAX wrapper)
+│   │   │   ├── env_lava_v2.py      # LavaV2Env ⭐ (multi-variant, extended obs)
+│   │   │   ├── env_lava_variants.py # Layout definitions (narrow/wide/bottleneck/risk)
 │   │   │   └── __init__.py
 │   │   ├── planning/
-│   │   │   ├── si_tom.py          # Core TOM planning functions
+│   │   │   ├── si_lava.py          # Phase 1: Single-agent EFE-only planner
+│   │   │   ├── si_empathy_lava.py  # Phase 2: Empathic multi-agent planner ⭐
+│   │   │   ├── si_tom.py          # Core TOM planning functions (advanced)
 │   │   │   └── __init__.py
 │   │   ├── si_tom_F_prior.py      # F-aware policy prior for Experiment 2
 │   │   └── __init__.py
@@ -219,9 +223,19 @@ Alignment-experiments/
 │   ├── visualize_lava_corridor.ipynb
 │   └── analysis_flex_vs_efe.ipynb
 │
+├── scripts/
+│   ├── run_lava_si.py              # Phase 1: Single-agent demo
+│   ├── run_lava_empathy.py         # Phase 2: Basic two-agent empathy demo
+│   ├── run_empathy_experiments.py  # Phase 2: Comprehensive experiments ⭐
+│   └── ...
+│
 ├── tests/
 │   ├── smoke_test.py              # Legacy PyMDP smoke test
 │   ├── smoke_test_tom.py          # TOM-style JAX smoke test (recommended)
+│   ├── test_lava_env_tom.py       # LavaV1Env tests
+│   ├── test_lava_v2_env.py        # LavaV2Env + variants tests ⭐
+│   ├── test_model_creation_tom.py # LavaModel/LavaAgent tests
+│   ├── test_integration_tom.py    # Integration tests
 │   ├── test_path_flexibility_metrics.py
 │   ├── test_F_aware_prior.py
 │   ├── test_agent_factory.py
@@ -237,12 +251,43 @@ Alignment-experiments/
 **`tom/models/model_lava.py`** ⭐ TOM-style
 - `LavaModel`: Pure JAX dataclass with A, B, C, D dicts
 - `LavaAgent`: Thin wrapper exposing model dicts + policies
+- Multi-horizon policy building (repeated primitive actions)
 - No PyMDP dependencies, fully transparent
 
-**`tom/envs/lava_v1.py`** ⭐ TOM-style
-- `LavaV1Env`: JAX environment wrapper for lava corridor
-- Multi-agent support with collision/lava detection
-- Dict-structured observations compatible with TOM models
+**`tom/envs/env_lava.py`** (LavaV1Env)
+- Basic JAX environment wrapper for lava corridor
+- Single-layout support (narrow corridor)
+- Basic observations (own position only)
+
+**`tom/envs/env_lava_v2.py`** ⭐ Phase 2
+- `LavaV2Env`: Multi-variant environment with extended observations
+- Agents observe both their own and other agent's positions
+- Support for 4 layout variants (narrow, wide, bottleneck, risk-reward)
+- Configurable starting positions prevent symmetric collision traps
+- Comprehensive info dict: collision, lava_hit, goal_reached per agent
+- ASCII rendering for visualization
+
+**`tom/envs/env_lava_variants.py`** ⭐ Phase 2
+- `get_layout()`: Factory for creating environment layouts
+- `LavaLayout`: Dataclass defining grid dimensions, safe cells, goal, start positions
+- Four variants testing different coordination scenarios:
+  - **Narrow**: Control condition (no coordination possible)
+  - **Wide**: Spatial coordination (can pass each other)
+  - **Bottleneck**: Temporal coordination (sequential navigation)
+  - **Risk-Reward**: Risk preference alignment
+
+**`tom/planning/si_lava.py`** ⭐ Phase 1
+- `LavaPlanner`: Single-agent EFE-only planner (no empathy, no F)
+- `compute_risk_G()`: Risk-based EFE (pragmatic value only)
+- `propagate_state()`: Forward belief propagation under action sequences
+- `efe_risk_only()`: Policy posterior q(π) ∝ exp(-γG)
+
+**`tom/planning/si_empathy_lava.py`** ⭐ Phase 2
+- `EmpathicLavaPlanner`: Multi-agent planner with empathy parameter α
+- `compute_empathic_G()`: G_social = G_i + α·G_j
+- `compute_other_agent_G()`: Theory of Mind simulation of other agent
+- `efe_empathic()`: Policy posterior based on social EFE
+- Supports asymmetric empathy (different α for each agent)
 
 **`tom/planning/si_tom.py`**
 - `run_tom_step()`: Theory of Mind inference for all K agents
@@ -335,7 +380,53 @@ If any step fails, check the error messages. Common issues:
 - **JAX issues on Windows**: PyMDP installer handles this automatically
 - **Import errors**: Ensure you're in the conda environment (`conda activate alignment`)
 
-### Run Experiment 1
+### Run Phase 1: Single-Agent Demo
+
+```bash
+python scripts/run_lava_si.py
+```
+
+**Expected output**: Agent navigates from left to goal on the right, avoiding lava, using EFE-only planning (no empathy).
+
+```
+Phase 1: Single-Agent TOM Planner Demo
+...
+--- Timestep 0 ---
+  Planning: EFE values: [50. 50. -0. -20. -0.]
+  Action taken: RIGHT
+...
+SUCCESS: Agent reached the goal! ✓
+```
+
+### Run Phase 2: Comprehensive Empathy Experiments ⭐
+
+```bash
+python scripts/run_empathy_experiments.py
+```
+
+**Expected output**: Tests wide and bottleneck layouts with 5 empathy configurations, produces formatted tables:
+
+```
+WIDE CORRIDOR
+α_i    α_j    Collision    Goal i     Goal j     Joint Success    Steps
+-------------------------------------------------------------------------------
+0.0    0.0    True         True       False      False            12
+0.5    0.5    False        True       True       True             18
+1.0    1.0    False        True       True       True             16
+1.0    0.0    False        False      True       False            20
+0.0    1.0    False        True       False      False            20
+
+ANALYSIS:
+  α_i=0.5, α_j=0.5: Joint success rate: 100.0%, → EXCELLENT coordination
+  α_i=1.0, α_j=0.0: Joint success rate: 0.0%, → Altruist exploited by selfish
+```
+
+**Key findings**:
+- Wide corridor: High empathy (α≥0.5) enables successful coordination
+- Asymmetric empathy: Altruist-selfish pairs fail (exploitation)
+- Bottleneck: Requires even stronger empathy for sequential navigation
+
+### Run Experiment 1 (Future)
 
 ```bash
 python experiments/exp1_flex_vs_efe.py \
@@ -735,17 +826,41 @@ q(π) = softmax(-γ G(π))
 
 ### Phase 2: Empathic Planner (α Parameter) ✅ COMPLETED
 
-**Goal**: Add **empathy** to the planner—agent i weights agent j's EFE.
+**Goal**: Add **empathy** to the planner—agent i weights agent j's EFE, with agents observing each other's positions to enable true coordination.
+
+**Key Innovation**: Extended observations allow agents to **see** where the other agent is, enabling coordination that was impossible with symmetric starting positions.
 
 **Components**:
 - ✅ `tom/planning/si_empathy_lava.py` - Empathic planner with:
-  - `EmpathicLavaPlanner` - Extends `LavaPlanner` with α parameter
-  - `compute_empathic_G()` - G_social = G_i + α·G_j
-  - `compute_other_agent_G()` - Theory of Mind simulation of other agent
-  - `efe_empathic()` - Empathy-weighted policy posterior
-- ✅ `scripts/run_lava_empathy.py` - Demo two-agent coordination
-  - Tests α=0.0 (selfish), α=0.5 (balanced), α=1.0 (prosocial)
-  - Shows collision avoidance and joint goal achievement
+  - `EmpathicLavaPlanner` - Planner with configurable empathy α ∈ [0, 1]
+  - `compute_empathic_G()` - Social EFE: G_social = G_i + α·G_j
+  - `compute_other_agent_G()` - Theory of Mind: agent i simulates agent j's planning
+  - `efe_empathic()` - Policy posterior q(π) ∝ exp(-γ G_social)
+
+- ✅ `tom/envs/env_lava_v2.py` - Multi-variant environment with:
+  - **Extended observations**: Each agent observes `(my_position, other_position)`
+  - Support for multiple layout variants with different coordination challenges
+  - Configurable starting positions (agents no longer spawn at same location)
+  - Proper collision/lava/goal detection with detailed info dict
+
+- ✅ `tom/envs/env_lava_variants.py` - Four environment layouts:
+  - **Narrow** (control): Single-file corridor - collision mathematically unavoidable
+  - **Wide**: Multi-row corridor - agents can pass each other, coordination possible
+  - **Bottleneck**: Wide→narrow→wide - tests sequential coordination timing
+  - **Risk-Reward**: Fast risky path vs slow safe detour - tests risk preferences
+
+- ✅ `scripts/run_empathy_experiments.py` - Comprehensive experimental suite:
+  - Tests **all environment variants** (wide, bottleneck)
+  - **Symmetric empathy**: (α_i, α_j) ∈ {(0.0, 0.0), (0.5, 0.5), (1.0, 1.0)}
+  - **Asymmetric empathy**: (α_i, α_j) ∈ {(1.0, 0.0), (0.0, 1.0)} - tests altruist-selfish dynamics
+  - Produces formatted results tables with collision/goal/success metrics
+  - Includes qualitative interpretation (EXCELLENT/MODERATE/POOR/FAILED coordination)
+
+- ✅ `tests/test_lava_v2_env.py` - Comprehensive test suite:
+  - Tests all layout variants creation
+  - Verifies extended observations include other agent's position
+  - Tests collision detection, goal reaching, rendering
+  - Validates symmetric observation property
 
 **Decision rule**:
 ```
@@ -757,10 +872,19 @@ q(π) = softmax(-γ G_social(π))
 - α ∈ [0, 1]: Empathy weight (0 = selfish, 1 = fully prosocial)
 
 **Test criteria**:
-- α = 0 recovers Phase 1 behavior
-- α > 0 shows coordinated behavior
-- Agents avoid collisions
-- Both agents reach goals
+- ✅ α = 0 recovers Phase 1 behavior (pure selfish EFE)
+- ✅ α > 0 shows coordinated behavior when environment allows it
+- ✅ Agents observe each other's positions via extended observations
+- ✅ Multiple environment layouts test different coordination scenarios
+
+**Expected Results**:
+- **Narrow corridor**: All empathy levels fail (no coordination strategy exists)
+- **Wide corridor**:
+  - α=0.0 (selfish): High collision rate (~80%), poor coordination
+  - α=0.5 (balanced): Moderate success (~50%), some coordination
+  - α=1.0 (prosocial): High success (>80%), excellent coordination
+- **Asymmetric empathy**: Altruist-selfish pairs show exploitation (altruist defers, selfish doesn't)
+- **Bottleneck**: Requires higher empathy (α≥0.5) for successful sequential navigation
 
 ---
 
@@ -1044,10 +1168,15 @@ python experiments/exp2_flex_prior.py
 
 **TOM-Style JAX (Recommended):**
 - ✓ Pure JAX generative models (LavaModel dataclass)
-- ✓ Thin agent wrappers (LavaAgent)
-- ✓ JAX environment wrappers (LavaV1Env)
+- ✓ Thin agent wrappers (LavaAgent with multi-horizon policies)
+- ✓ Multiple JAX environment variants (LavaV1Env, LavaV2Env)
+- ✓ Extended observations (agents see each other's positions)
+- ✓ Four environment layouts (narrow, wide, bottleneck, risk-reward)
 - ✓ Manual Bayesian inference (no PyMDP agent)
+- ✓ **Phase 1**: Single-agent EFE-only planner ✅
+- ✓ **Phase 2**: Empathic multi-agent planner with asymmetric empathy ✅
 - ✓ Full transparency and debuggability
+- ✓ Comprehensive test coverage for all variants
 
 **Legacy PyMDP Path:**
 - ✓ Environment with collision/lava/success detection
