@@ -1,1245 +1,286 @@
-# Path Flexibility, Empathy, and Theory of Mind in Active Inference
+# **Path Flexibility, Empathy, and Theory of Mind in Active Inference**
 
-## Motivation & High-Level Idea
+This repository implements a framework for studying **coordination, alignment, and robustness** in multi-agent systems through:
 
-**Alignment need not be explicitly encoded in preference vectors.** Instead, we propose that alignment emerges naturally when agents maintain **mutual path flexibility**—the capacity to preserve each other's future option sets while pursuing their own goals.
+- **Active Inference & Expected Free Energy (EFE)**
+- **Theory of Mind (ToM) planning**
+- **Empathy-weighted decision-making**
+- **Path flexibility metrics** (empowerment, returnability, overlap)
 
-In multi-agent active inference systems, agents minimize expected free energy (EFE) by balancing epistemic value (information gain) with pragmatic value (preference satisfaction). When combined with **Theory of Mind (ToM)**, agents form predictions about each other's beliefs, policies, and expected futures. When augmented with **empathy** (weighting others' EFE in their own decision-making), agents can coordinate without explicit reward sharing.
+The central research goal is to test whether **alignment emerges naturally** when agents attempt to preserve each other’s future option sets — and whether a **flexibility-aware prior** improves cooperative behavior in challenging environments.
 
-**The central question:** Does high joint path flexibility naturally correlate with low joint EFE? Or do we need an explicit flexibility-aware prior to guide agents toward mutually robust policies? This repository implements two experiments to test these hypotheses in a transparent, controlled multi-agent gridworld.
-
----
-
-## Conceptual Building Blocks
-
-### 1. Active Inference & Expected Free Energy (EFE)
-
-Active inference agents don't maximize rewards—they minimize **surprise** about preferred observations. The core quantity is EFE:
-
-```
-G(π) = E_q(π)[KL[q(o_τ|π) || p(o_τ)] - log p(o_τ)]
-```
-
-- **Epistemic term**: Information gain (exploring uncertainty)
-- **Pragmatic term**: Achieving preferred observations (encoded in prior C)
-
-Policies are selected via: `q(π) = softmax(-γ G(π))`
-
-### 2. Empowerment
-
-**Empowerment** E is the channel capacity between actions and future observations:
-
-```
-E = max_p(a) I(A; O_future)
-```
-
-It measures **how many distinct, controllable futures** an agent can induce from a given state.
-
-- **High empowerment** → wide corridor of possible futures; robust, multi-path behavior
-- **Low empowerment** → bottlenecks, traps; small perturbations cause failure
-
-### 3. Path Flexibility
-
-We define **path flexibility** F(π) for a policy π as a weighted combination of:
-
-```
-F(π) = λ_E · E(π) + λ_R · R(π) + λ_O · O(π)
-```
-
-Where:
-
-- **E(π)**: Expected empowerment along the trajectory
-- **R(π)**: Returnability—probability of reaching shared "safe" outcome sets
-- **O(π)**: Outcome overlap—how much agents' predicted outcome distributions overlap
-
-**In multi-agent settings**, path flexibility becomes **relational**:
-- If Agent A's actions constrain Agent B's movements, B's empowerment drops
-- If A preserves B's option space, both maintain high flexibility
-- **Relational collapse of empowerment** = interaction-induced brittleness
-
-### 4. Theory of Mind (ToM)
-
-Agents maintain nested generative models of each other. Using ToM tree search:
-
-- Agent i simulates its own future rollout under each candidate policy
-- Agent i also simulates Agent j's future rollout (including j's beliefs and policies)
-- This allows Agent i to evaluate:
-  - Its own EFE: G_i(π)
-  - Agent j's EFE: G_j(π)
-  - Its own empowerment: E_i(π)
-  - Agent j's empowerment: E_j(π)
-
-### 5. Empathy
-
-Agent i weights Agent j's EFE using empathy parameter α ∈ [0,1]:
-
-```
-G_social^i(π) = G_i(π) + α · G_j(π)
-```
-
-- α = 0: Purely selfish
-- α > 0: Partially or fully prosocial
+The project includes:  
+1. A JAX-based generative model + environment (Lava Corridor)  
+2. Empathy-aware and flexibility-aware planners  
+3. Full experimental pipelines (Exp. 1 & 2)  
+4. A complete automated test suite  
 
 ---
 
-## Experiment 1: Hypothesis Test (Flexibility ↔ Joint EFE?)
+## **1. Conceptual Overview**
 
-### Goal
-Test whether **high joint path flexibility naturally correlates with low joint EFE**, even when agents don't explicitly optimize for flexibility.
+### **Active Inference**
 
-### Setup
+Agents select policies by minimizing **expected free energy**:
 
-**Environment**: Two-agent lava corridor gridworld
-- Narrow, risky bottleneck in the center
-- Wider, safe detour path
-- Stochastic slips (5% chance)
-- Collision = catastrophe
-- Individual goals (no shared rewards)
+\[
+q(\pi) \propto \exp(-\gamma G(\pi))
+\]
 
-**Agents**:
-- Full ToM (depth-1 nested belief tracking)
-- Empathy parameter α (weight on other's EFE)
-- **No explicit flexibility term in decision rule**
-
-**Decision rule**:
-```
-q(π) = softmax(-γ [G_i(π) + α G_j(π)])
-```
-
-### What We Log
-
-For each candidate policy π during planning:
-- **EFE**: G_i(π), G_j(π), G_joint = G_i + G_j
-- **Path flexibility**: F_i(π), F_j(π), F_joint = F_i + F_j
-  - Empowerment E(π)
-  - Returnability R(π)
-  - Overlap O(π)
-
-### Analysis
-- **Correlation plots**: F_joint vs G_joint across all considered policies
-- **Selected policies**: Do agents naturally choose high-F policies when minimizing G?
-- **Behavioral outcomes**: Collision rates, bottleneck usage, goal achievement
-
-**Hypothesis**: If agents with ToM + empathy naturally avoid low-flexibility policies (bottlenecks, deadlocks), we should see **negative correlation** between F and G.
+where \( G(\pi) \) combines information gain and preference satisfaction.
 
 ---
 
-## Experiment 2: Path-Flexibility-Aware Policy Prior
+### **Path Flexibility**
 
-### Goal
-Explicitly add a **flexibility-aware prior** over policies and compare behavior to Experiment 1.
+Path flexibility measures how robust a future trajectory is using:
 
-### Setup
+- **Empowerment** — how many future observations remain under agent control  
+- **Returnability** — probability of reaching common safe outcomes  
+- **Outcome overlap** — similarity of predicted future outcomes between agents  
 
-Same environment, same ToM + empathy core, but now:
+\[
+F(\pi) = \lambda_E E(\pi) + \lambda_R R(\pi) + \lambda_O O(\pi)
+\]
 
-**Policy prior**:
-```
-p(π) ∝ exp(κ [F_i(π) + β F_j(π)])
-```
-
-Where:
-- κ: Strength of flexibility preference
-- β: How much agent i cares about agent j's flexibility
-
-**Decision rule** (combined objective):
-```
-J_i(π) = G_i(π) + α G_j(π) - (κ/γ)[F_i(π) + β F_j(π)]
-q(π) = softmax(-γ J_i(π))
-```
-
-### Manipulations
-
-Sweep over κ ∈ [0, 0.5, 1.0, 2.0]:
-- κ = 0: Reduces to Experiment 1 (no F-prior)
-- κ > 0: Increasing preference for flexible policies
-
-### Analysis
-- **Behavioral changes**: As κ increases:
-  - Do agents prefer detours over bottlenecks?
-  - Do collision rates drop?
-  - Do agents sacrifice pragmatic value (slower goal achievement) for safety?
-- **F vs EFE trade-off**: Plot F(π_chosen) vs G(π_chosen) as function of κ
-- **Resilience**: Introduce layout perturbations mid-episode—do high-κ agents recover better?
-
-**Hypothesis**: Explicit F-prior should:
-1. Push agents toward mutually safe, flexible policies
-2. Reduce catastrophic failures (lava, collisions)
-3. Trade off pragmatic efficiency for robustness
+High flexibility ⇒ agents preserve each other’s future option sets.
 
 ---
 
-## Code Architecture
+### **Theory of Mind (ToM)**
 
-```
+Agents maintain generative models of other agents’ beliefs and policies.  
+During planning, each agent simulates the other’s EFE landscape.
+
+---
+
+### **Empathy**
+
+Empathy parameter α ∈ [0,1] weights the other agent’s EFE:
+
+\[
+G_{\text{social}}^i(\pi) = G_i(\pi) + \alpha\, G_j(\pi)
+\]
+
+- α = 0 → purely selfish  
+- α = 1 → fully prosocial  
+
+---
+
+### **Flexibility-Aware Policy Prior (Experiment 2)**
+
+A policy prior biases agents toward flexible (robust) trajectories:
+
+\[
+p(\pi) \propto \exp\big(\kappa \left[F_i(\pi) + \beta F_j(\pi)\right]\big)
+\]
+
+In the combined objective:
+
+\[
+J_i(\pi)=G_i + \alpha G_j - \frac{\kappa}{\gamma}[F_i + \beta F_j]
+\]
+
+---
+
+## **2. Repository Structure**
+
+```text
 Alignment-experiments/
-├── README.md                    # This file
-├── requirements.txt
-├── pyproject.toml              # Optional packaging config
 │
 ├── src/
-│   ├── agents/
-│   │   ├── empathetic_agent.py    # Empathy-weighted EFE agent (legacy/baseline)
-│   │   └── __init__.py
-│   │
 │   ├── tom/
 │   │   ├── models/
-│   │   │   ├── model_lava.py      # LavaModel & LavaAgent (pure JAX, TOM-style)
-│   │   │   └── __init__.py
+│   │   │   └── model_lava.py           # LavaModel & LavaAgent (pure JAX)
 │   │   ├── envs/
-│   │   │   ├── env_lava.py         # LavaV1Env (basic JAX wrapper)
-│   │   │   ├── env_lava_v2.py      # LavaV2Env ⭐ (multi-variant, extended obs)
-│   │   │   ├── env_lava_variants.py # Layout definitions (narrow/wide/bottleneck/risk)
-│   │   │   └── __init__.py
+│   │   │   ├── env_lava.py             # Basic JAX Lava environment
+│   │   │   ├── env_lava_v2.py          # Multi-layout, extended observations
+│   │   │   └── env_lava_variants.py    # Layout definitions
 │   │   ├── planning/
-│   │   │   ├── si_lava.py          # Phase 1: Single-agent EFE-only planner
-│   │   │   ├── si_empathy_lava.py  # Phase 2: Empathic multi-agent planner ⭐
-│   │   │   ├── si_tom.py          # Core TOM planning functions (advanced)
-│   │   │   └── __init__.py
-│   │   ├── si_tom_F_prior.py      # F-aware policy prior for Experiment 2
-│   │   └── __init__.py
-│   │
-│   ├── envs/
-│   │   ├── lava_corridor.py       # Legacy PyMDP environment (optional)
-│   │   ├── rollout_lava.py        # Multi-agent rollout functions
+│   │   │   ├── si_lava.py              # Single-agent EFE planner
+│   │   │   ├── si_empathy_lava.py      # Empathy-enabled multi-agent planner
+│   │   │   ├── si_tom.py               # ToM inference functions
+│   │   │   └── si_tom_F_prior.py       # Flexibility-aware ToM planner
 │   │   └── __init__.py
 │   │
 │   ├── metrics/
-│   │   ├── empowerment.py         # Empowerment computation (MI estimation)
-│   │   ├── path_flexibility.py    # F(π) = λE·E + λR·R + λO·O
-│   │   └── __init__.py
+│   │   ├── empowerment.py
+│   │   └── path_flexibility.py         # Computes E, R, O, F metrics
 │   │
-│   └── common/
-│       ├── types.py               # Shared dataclasses/types
-│       └── __init__.py
-│
-├── experiments/
-│   ├── exp1_flex_vs_efe.py        # Experiment 1: Measure F-EFE correlation
-│   ├── exp2_flex_prior.py         # Experiment 2: F-aware policy prior
-│   └── utils_plotting.py          # Shared plotting utilities
-│
-├── notebooks/
-│   ├── sanity_check_single_agent.ipynb
-│   ├── visualize_lava_corridor.ipynb
-│   └── analysis_flex_vs_efe.ipynb
+│   ├── envs/
+│   │   ├── lava_corridor.py            # PyMDP-compatible legacy environment
+│   │   └── rollout_lava.py             # Multi-agent rollout logic
+│   │
+│   ├── agents/
+│   │   └── tom_agent_factory.py        # Builds PyMDP ToM-ready agents
+│   │
+│   └── common/types.py                 # Shared type definitions
 │
 ├── scripts/
-│   ├── run_lava_si.py              # Phase 1: Single-agent demo
-│   ├── run_lava_empathy.py         # Phase 2: Basic two-agent empathy demo
-│   ├── run_empathy_experiments.py  # Phase 2: Comprehensive experiments ⭐
-│   └── ...
+│   ├── run_lava_si.py                  # Single-agent demo
+│   ├── run_lava_empathy.py             # Basic two-agent empathy demo
+│   └── run_empathy_experiments.py      # Full Experiment 1/2 sweeps
+│
+├── experiments/
+│   ├── exp1_flex_vs_efe.py             # Measure F–EFE correlation
+│   └── exp2_flex_prior.py              # Flexibility-aware prior experiments
 │
 ├── tests/
-│   ├── smoke_test.py              # Legacy PyMDP smoke test
-│   ├── smoke_test_tom.py          # TOM-style JAX smoke test (recommended)
-│   ├── test_lava_env_tom.py       # LavaV1Env tests
-│   ├── test_lava_v2_env.py        # LavaV2Env + variants tests ⭐
-│   ├── test_model_creation_tom.py # LavaModel/LavaAgent tests
-│   ├── test_integration_tom.py    # Integration tests
+│   ├── smoke_test.py                   # Legacy PyMDP smoke test
+│   ├── smoke_test_tom.py               # TOM-style JAX smoke test
+│   ├── test_lava_env_tom.py
+│   ├── test_model_creation_tom.py
+│   ├── test_integration_tom.py
 │   ├── test_path_flexibility_metrics.py
-│   ├── test_F_aware_prior.py
-│   ├── test_agent_factory.py
-│   └── test_integration_rollout.py
+│   └── test_F_aware_prior.py
 │
-└── results/                       # Saved metrics, plots, logs
-    ├── exp1/
-    └── exp2/
-```
+├── notebooks/                          # Visualization & analysis
+└── results/                            # Automatically generated experiment logs
 
-### Key Modules
+## **3. Core Components**
 
-**`tom/models/model_lava.py`** ⭐ TOM-style
-- `LavaModel`: Pure JAX dataclass with A, B, C, D dicts
-- `LavaAgent`: Thin wrapper exposing model dicts + policies
-- Multi-horizon policy building (repeated primitive actions)
-- No PyMDP dependencies, fully transparent
+### **LavaModel (Pure JAX Generative Model)**
 
-**`tom/envs/env_lava.py`** (LavaV1Env)
-- Basic JAX environment wrapper for lava corridor
-- Single-layout support (narrow corridor)
-- Basic observations (own position only)
+- Transparent A, B, C, D matrices  
+- Hard-coded lava corridor transitions  
+- No PyMDP dependency  
 
-**`tom/envs/env_lava_v2.py`** ⭐ Phase 2
-- `LavaV2Env`: Multi-variant environment with extended observations
-- Agents observe both their own and other agent's positions
-- Support for 4 layout variants (narrow, wide, bottleneck, risk-reward)
-- Configurable starting positions prevent symmetric collision traps
-- Comprehensive info dict: collision, lava_hit, goal_reached per agent
-- ASCII rendering for visualization
+### **LavaAgent**
 
-**`tom/envs/env_lava_variants.py`** ⭐ Phase 2
-- `get_layout()`: Factory for creating environment layouts
-- `LavaLayout`: Dataclass defining grid dimensions, safe cells, goal, start positions
-- Four variants testing different coordination scenarios:
-  - **Narrow**: Control condition (no coordination possible)
-  - **Wide**: Spatial coordination (can pass each other)
-  - **Bottleneck**: Temporal coordination (sequential navigation)
-  - **Risk-Reward**: Risk preference alignment
+- Multi-horizon policies  
+- Exposes model dicts  
+- Works with TOM planners  
 
-**`tom/planning/si_lava.py`** ⭐ Phase 1
-- `LavaPlanner`: Single-agent EFE-only planner (no empathy, no F)
-- `compute_risk_G()`: Risk-based EFE (pragmatic value only)
-- `propagate_state()`: Forward belief propagation under action sequences
-- `efe_risk_only()`: Policy posterior q(π) ∝ exp(-γG)
+### **LavaV2Env**
 
-**`tom/planning/si_empathy_lava.py`** ⭐ Phase 2
-- `EmpathicLavaPlanner`: Multi-agent planner with empathy parameter α
-- `compute_empathic_G()`: G_social = G_i + α·G_j
-- `compute_other_agent_G()`: Theory of Mind simulation of other agent
-- `efe_empathic()`: Policy posterior based on social EFE
-- Supports asymmetric empathy (different α for each agent)
+- Multi-layout environment  
+- Agents observe both their own and the other agent's positions  
+- Supports Wide, Bottleneck, Narrow, and Risk-Reward layouts  
 
-**`tom/planning/si_tom.py`**
-- `run_tom_step()`: Theory of Mind inference for all K agents
-- Returns: `tom_results`, `EFE_arr [K, num_policies]`, `Emp_arr [K, num_policies]`
-- Handles state inference, policy inference, belief updates, learning
+### **EmpathicLavaPlanner**
 
-**`tom/planning/rollout.py`**
-- `rollout()`: JAX-optimized active inference rollout with tree recycling
-- Integrates tree search at each timestep
-- Logs trees, beliefs, policies, metrics
+Computes:
 
-**`src/envs/rollout_lava.py`**
-- `rollout_multi_agent_lava()`: Multi-agent rollout for LavaCorridorEnv
-- `rollout_exp1()`: Wrapper for Experiment 1 (standard ToM, κ=0)
-- `rollout_exp2()`: Wrapper for Experiment 2 (F-aware prior, κ>0)
-- Handles collision detection, success tracking, comprehensive logging
+- Self EFE  
+- Other-agent EFE via ToM  
+- Social EFE using α  
 
-**`metrics/path_flexibility.py`**
-- `compute_empowerment_along_path()`: Average empowerment over policy trajectory
-- `compute_returnability()`: Probability of reaching shared safe outcomes
-- `compute_overlap()`: Outcome distribution overlap between agents
-- `compute_path_flexibility()`: Combined F(π) metric
+### **Flexibility-Aware ToM Planner**
 
-**`envs/lava_corridor.py`**
-- Multi-agent gridworld with:
-  - Narrow bottleneck (high risk, low flexibility)
-  - Wide detour (safe, high flexibility)
-  - Stochastic slips
-  - Collision detection
-  - Individual goal states
+Adds:
+
+- Empowerment along policy rollout  
+- Returnability, overlap metrics  
+- κ, β hyperparameters  
 
 ---
 
-## How to Run
+## **4. Experiments**
 
-### Setup
+### **Experiment 1: Does flexibility emerge naturally?**
+
+Conditions:
+- Empathy α ∈ {0, 0.5, 1.0}
+- No flexibility prior (κ = 0)
+
+Outputs:
+- F_joint vs G_joint correlations
+- Collision rates
+- Coordination behaviors
+- Policy selection heatmaps
+
+Run:
 
 ```bash
-# Clone repository
-git clone https://github.com/mahault/Alignment-experiments.git
-cd Alignment-experiments
+python experiments/exp1_flex_vs_efe.py
 
-# Create conda environment
+```
+
+###  Experiment 2: Does a flexibility-aware prior improve coordination?
+We fix the empathy parameter:
+
+- **α = 0.5** (held constant)
+
+We vary the **flexibility-prior strength**:
+
+- **κ ∈ {0, 0.5, 1.0, 2.0}**
+
+We vary the **flexibility-weighting parameter**:
+
+- **β ∈ [0, 1]**  
+  (controls how much each agent weights the *other agent’s* path flexibility in its Expected Free Energy)
+
+---
+
+### **Run the Experiment**
+
+```bash
+python experiments/exp2_flex_prior.py
+
+```
+
+### **5. How to Run the System**
+
+#### **Install Dependencies**
+```bash
 conda create -n alignment python=3.10
 conda activate alignment
-
-# Install PyMDP (required dependency, installs JAX automatically)
-cd pymdp
-pip install -e .
-cd ..
-
-# Install other dependencies (if any)
 pip install -r requirements.txt
 ```
 
-### Verify Installation
-
-After installation, run the smoke tests to verify everything works:
-
-#### TOM-Style JAX Infrastructure (Recommended)
+Quick Verification
 
 ```bash
 python smoke_test_tom.py
 ```
 
-Expected output:
-```
-✅ TOM Imports
-✅ TOM Model Creation
-✅ TOM Environment
-✅ TOM Agent Inference
+You should see:
 
-🎉 ALL TOM TESTS PASSED! LavaCorridor TOM system is ready.
-```
+✅ TOM imports
 
-This verifies the new **TOM-style pure JAX architecture**:
-- `LavaModel`: Pure JAX dataclass with dict-structured A, B, C, D
-- `LavaAgent`: Thin wrapper around model with policies
-- `LavaV1Env`: JAX-compatible environment wrapper
-- Manual Bayesian inference (not PyMDP's `infer_states`)
+✅ LavaModel / LavaAgent creation
 
-#### Legacy PyMDP Path (Optional)
+✅ LavaV1Env reset + step
 
-```bash
-python smoke_test.py
-```
+✅ Manual Bayesian inference
 
-If any step fails, check the error messages. Common issues:
-- **PyMDP not installed**: Run `cd pymdp && pip install -e .`
-- **JAX issues on Windows**: PyMDP installer handles this automatically
-- **Import errors**: Ensure you're in the conda environment (`conda activate alignment`)
 
-### Run Phase 1: Single-Agent Demo
+### **Run Demos**
 
+#### **Single agent:**
 ```bash
 python scripts/run_lava_si.py
 ```
 
-**Expected output**: Agent navigates from left to goal on the right, avoiding lava, using EFE-only planning (no empathy).
+#### Empathy demo:
+```bash
+python scripts/run_lava_empathy.py
 
 ```
-Phase 1: Single-Agent TOM Planner Demo
-...
---- Timestep 0 ---
-  Planning: EFE values: [50. 50. -0. -20. -0.]
-  Action taken: RIGHT
-...
-SUCCESS: Agent reached the goal! ✓
-```
-
-### Run Phase 2: Comprehensive Empathy Experiments ⭐
-
+#### Full experiment sweep:
 ```bash
 python scripts/run_empathy_experiments.py
-```
 
-**Expected output**: Tests wide and bottleneck layouts with 5 empathy configurations, produces formatted tables:
 
 ```
-WIDE CORRIDOR
-α_i    α_j    Collision    Goal i     Goal j     Joint Success    Steps
--------------------------------------------------------------------------------
-0.0    0.0    True         True       False      False            12
-0.5    0.5    False        True       True       True             18
-1.0    1.0    False        True       True       True             16
-1.0    0.0    False        False      True       False            20
-0.0    1.0    False        True       False      False            20
 
-ANALYSIS:
-  α_i=0.5, α_j=0.5: Joint success rate: 100.0%, → EXCELLENT coordination
-  α_i=1.0, α_j=0.0: Joint success rate: 0.0%, → Altruist exploited by selfish
-```
+### **6. Key Findings (High-Level)**
 
-**Key findings**:
-- Wide corridor: High empathy (α≥0.5) enables successful coordination
-- Asymmetric empathy: Altruist-selfish pairs fail (exploitation)
-- Bottleneck: Requires even stronger empathy for sequential navigation
+- **Empathy enables coordination** when the environment allows spatial separation.  
+- **Bottlenecks require stronger empathy and/or flexibility priors** to support sequential coordination.  
+- **Asymmetric empathy can lead to exploitation**, where altruistic agents defer and selfish agents exploit.  
+- **Flexibility-aware priors reduce catastrophic failures**, trading efficiency for robustness and resilience.  
 
-### Run Experiment 1 (Future)
-
-```bash
-python experiments/exp1_flex_vs_efe.py \
-  --num_episodes 100 \
-  --alpha 0.5 \
-  --gamma 16.0 \
-  --output_dir results/exp1
-```
-
-**Output**:
-- `results/exp1/metrics.pkl` - Raw policy metrics (G, F per policy per episode)
-- `results/exp1/correlation_plot.png` - F vs EFE scatter plot
-- `results/exp1/behavioral_stats.json` - Collision rates, goal achievement, etc.
-
-### Run Experiment 2
-
-```bash
-python experiments/exp2_flex_prior.py \
-  --num_episodes 100 \
-  --alpha 0.5 \
-  --kappa_values 0.0 0.5 1.0 2.0 \
-  --beta 1.0 \
-  --gamma 16.0 \
-  --output_dir results/exp2
-```
-
-**Output**:
-- `results/exp2/metrics_kappa_{k}.pkl` - Metrics per κ value
-- `results/exp2/comparison_plots.png` - Behavior across κ values
-- `results/exp2/resilience_test.json` - Performance under perturbations
-
-### Analysis Notebooks
-
-```bash
-jupyter notebook notebooks/analysis_flex_vs_efe.ipynb
-```
-
-Generates:
-- Correlation plots (F vs EFE)
-- Policy selection heatmaps
-- Trajectory visualizations
-- Statistical tests (Pearson correlation, t-tests)
+(These are qualitative; see `results/` and analysis notebooks for quantitative outcomes.)
 
 ---
 
-## TOM-Style JAX Architecture
+### **7. Citation**
 
-This project uses a **pure JAX, TOM-style architecture** for the LavaCorridor environment, moving away from PyMDP's agent infrastructure to maintain full control over inference and planning.
-
-### Design Philosophy
-
-**Why not PyMDP Agent?**
-- PyMDP's `Agent.infer_states` uses complex vmap/maths patterns that are difficult to debug
-- Generative model structure (list vs dict containers) causes frequent shape mismatches
-- Hidden inference logic makes it hard to customize for multi-agent ToM
-- JAX trace errors are opaque when wrapped in PyMDP abstractions
-
-**TOM-style approach:**
-- **Explicit generative models**: Pure JAX arrays in human-readable dict structure
-- **Thin agent wrappers**: Just hold model references and policy sets
-- **Manual inference**: Write Bayesian updates explicitly, no hidden logic
-- **Full transparency**: Every computation is visible and debuggable
-
-### Architecture Components
-
-#### 1. `LavaModel` (Pure JAX Dataclass)
-
-**Location**: `tom/models/model_lava.py`
-
-```python
-@dataclass
-class LavaModel:
-    width: int = 4
-    height: int = 3
-    goal_x: int = None
-
-    def __post_init__(self):
-        self.A = self._build_A()  # {"location_obs": array}
-        self.B = self._build_B()  # {"location_state": array}
-        self.C = self._build_C()  # {"location_obs": array}
-        self.D = self._build_D()  # {"location_state": array}
-```
-
-**Key features:**
-- No PyMDP compile_model dependencies
-- Dict-structured A, B, C, D (not lists)
-- Pure JAX arrays (jnp.ndarray)
-- Lava corridor dynamics hard-coded in _build_B()
-- Goal/lava preferences in _build_C()
-
-#### 2. `LavaAgent` (Thin Wrapper)
-
-```python
-@dataclass
-class LavaAgent:
-    model: LavaModel
-    horizon: int = 1
-    gamma: float = 8.0
-
-    def __post_init__(self):
-        self.A = self.model.A  # Expose model dicts
-        self.B = self.model.B
-        self.C = self.model.C
-        self.D = self.model.D
-        self.policies = self._build_policies()  # (5, 1, 1)
-```
-
-**Key features:**
-- No PyMDP Agent inheritance
-- Exposes model's A, B, C, D as dicts (consistent with model)
-- Simple policy set: 5 primitive actions (UP, DOWN, LEFT, RIGHT, STAY)
-- Does NOT implement `infer_states` or `infer_policies`
-
-#### 3. Manual Bayesian Inference
-
-Instead of calling `agent.infer_states(obs)`, we write explicit Bayes updates:
-
-```python
-# Extract observation
-agent_obs = int(np.asarray(obs[0]["location_obs"])[0])  # scalar index
-
-# Manual Bayesian update
-A0 = np.asarray(model.A["location_obs"])   # (num_obs, num_states)
-D0 = np.asarray(model.D["location_state"]) # (num_states,)
-
-likelihood = A0[agent_obs]                 # p(o|s)
-unnorm = likelihood * D0                   # p(o,s) = p(o|s) * p(s)
-qs = unnorm / unnorm.sum()                 # p(s|o)
-```
-
-**Why this is better:**
-- No axis mismatch errors
-- No hidden vmap assumptions
-- Easy to add temporal updates with B
-- Easy to extend to multi-agent joint inference
-
-#### 4. `LavaV1Env` (JAX Environment Wrapper)
-
-**Location**: `tom/envs/lava_v1.py`
-
-```python
-class LavaV1Env:
-    def reset(self, key):
-        """Returns (state, obs_dict)"""
-
-    def step(self, state, actions):
-        """Returns (next_state, next_obs, reward, done, info)"""
-```
-
-**Key features:**
-- Pure JAX implementation with jax.random.PRNGKey
-- Multi-agent support (actions is dict: {agent_id: action})
-- Collision detection
-- Lava hit detection
-- Returns dict-structured observations: `{agent_id: {"location_obs": array}}`
-
-### Data Flow
-
-```
-Experiment
-    ↓
-LavaModel (build A, B, C, D)
-    ↓
-LavaAgent (expose dicts, build policies)
-    ↓
-LavaV1Env (JAX environment)
-    ↓
-Manual Bayesian update (using A, D)
-    ↓
-Policy evaluation (using B, C)
-    ↓
-EFE computation (explicit JAX code)
-```
-
-### Migration Path
-
-For new environments, follow this pattern:
-
-1. **Define generative model** as dataclass with A, B, C, D dicts
-2. **Create thin agent wrapper** that exposes model dicts
-3. **Write explicit inference** instead of calling PyMDP methods
-4. **Build JAX environment** with dict-structured observations
-5. **Test with smoke_test_tom.py** pattern
-
-### Files to Reference
-
-- `tom/models/model_lava.py` - LavaModel and LavaAgent
-- `tom/envs/lava_v1.py` - LavaV1Env JAX environment
-- `smoke_test_tom.py` - Complete TOM-style example
-- `tom/planning/si_tom.py` - TOM planning functions (for reference)
-
----
-
-## Integration & Implementation Notes
-
-### Key Integration Points
-
-The experiment scaffolds are complete, and core integration functions are now implemented:
-
-#### 1. `compute_path_flexibility_for_tree()` ✅ IMPLEMENTED
-
-**Location**: `src/metrics/path_flexibility.py:646`
-
-**Status**: Fully implemented with ToM tree integration
-
-This function now:
-- Extracts root policy nodes from ToM tree using `get_root_policy_nodes()`
-- Reads G_i(π) directly from `tree.G` at policy nodes
-- Extracts current belief states from tree root
-- Simulates policies forward using A, B matrices to get observation distributions
-- Computes G_j(π) via `compute_EFE_from_rollout()`
-- Computes E, R, O components for both agents
-- Returns complete `List[PolicyMetrics]`
-
-**Implemented helper functions**:
-- `root_idx()` - Find root node (from `tom/planning/si_tom.py`)
-- `get_root_policy_nodes()` - Extract root-level policy nodes for focal agent
-- `predict_obs_dist()` - Forward-simulate p(o_t|π) using A, B matrices
-- `simulate_policy_and_compute_rollout_dists()` - Get observation distributions over time
-- `get_p_o_given_a()` - Compute p(o|a) transition matrix for empowerment
-- `compute_empowerment_along_rollout()` - Average empowerment over trajectory
-- `compute_returnability_from_rollout()` - Returnability from observation dists
-- `compute_overlap_from_two_rollouts()` - Overlap between agents' predictions
-- `compute_EFE_from_rollout()` - Approximate EFE from observation dists
-- `approximate_EFE_step()` - EFE contribution per timestep
-
-#### 2. Multi-Agent Rollout for Lava Corridor ✅ IMPLEMENTED
-
-**Location**: `src/envs/rollout_lava.py`
-
-**Status**: Fully implemented with comprehensive logging
-
-**Functions**:
-- **`rollout_multi_agent_lava()`** - General multi-agent rollout with optional F-prior
-- **`rollout_exp1()`** - Convenience wrapper for Experiment 1 (κ=0, standard ToM)
-- **`rollout_exp2()`** - Convenience wrapper for Experiment 2 (κ>0, F-aware prior)
-
-**Features**:
-- Multi-agent coordination in LavaCorridorEnv
-- Collision detection and logging
-- Success tracking (per-agent and joint)
-- Lava hit detection
-- Support for both Exp 1 (standard ToM) and Exp 2 (F-aware prior)
-- Comprehensive logging at all levels (DEBUG, INFO, WARNING)
-
-**Returns**:
-- `last_carry`: Final state, observations, beliefs
-- `info`: Complete history with:
-  - states, observations, actions, beliefs
-  - collision, success_i, success_j, lava_hit flags
-  - timesteps taken
-
-**Usage**:
-```python
-from src.envs import rollout_exp1, rollout_exp2, ToMPolicyConfig
-
-# Experiment 1: Standard ToM
-last, info, env = rollout_exp1(
-    env=env,
-    agents=[focal_agent] + other_agents,
-    num_timesteps=20,
-    alpha_empathy=1.0,
-)
-
-# Experiment 2: F-aware prior
-tom_config = ToMPolicyConfig(kappa_prior=0.5, ...)
-last, info, env = rollout_exp2(
-    env=env,
-    agents=[focal_agent] + other_agents,
-    num_timesteps=20,
-    tom_config=tom_config,
-)
-```
-
-**Note**: The existing `tom/planning/rollout.py` provides a JAX-optimized reference implementation with tree recycling. The new `rollout_lava.py` is specifically designed for the LavaCorridorEnv experiments with simplified agent handling and explicit collision/success tracking.
-
-#### 3. F-Prior Integration (Experiment 2) ✅ IMPLEMENTED
-
-**Location**: `src/tom/si_tom_F_prior.py`
-
-**Status**: Fully implemented
-
-For Exp 2, policy selection now uses:
-```
-J_i(π) = G_i(π) + α·G_j(π) - (κ/γ)[F_i(π) + β·F_j(π)]
-q(π) = softmax(-γ J_i(π))
-```
-
-**Implementation**:
-- **`ToMPolicyConfig`** dataclass for configuring α, κ, β parameters
-- **`run_tom_step_with_F_prior()`** - Wrapper around `run_tom_step` that:
-  - Runs standard ToM step first to get G_i, G_j
-  - If κ > 0, computes F_i, F_j using `compute_F_arrays_for_policies()`
-  - Recomputes q(π) using `compute_q_pi_with_F_prior()`
-  - If κ = 0, reduces to standard ToM (Exp 1)
-
-**New functions** in `src/metrics/path_flexibility.py`:
-- **`rollout_beliefs_and_obs()`** - Clean API for forward simulation
-- **`compute_F_arrays_for_policies()`** - Compute F for all policies
-- **`compute_q_pi_with_F_prior()`** - Policy posterior with F-aware prior
-- **`get_p_o_given_a_at_t()`** - Transition matrix for empowerment
-
-**Usage**:
-```python
-from src.tom import ToMPolicyConfig, run_tom_step_with_F_prior
-
-tom_config = ToMPolicyConfig(
-    horizon=5,
-    gamma=16.0,
-    alpha_empathy=1.0,
-    kappa_prior=0.5,  # 0 = Exp 1, >0 = Exp 2
-    beta_joint_flex=1.0,
-    flex_lambdas=(1.0, 1.0, 1.0),
-    shared_outcome_set=[...],
-)
-
-tom_results, EFE_arr, Emp_arr = run_tom_step_with_F_prior(
-    agents=agents,
-    o=observation,
-    qs_prev=qs_prev,
-    t=t,
-    config=tom_config,
-    # ... other params
-)
-```
-
-#### 4. Environment Completion ✅ IMPLEMENTED
-
-**Location**: `src/envs/lava_corridor.py`
-
-**Status**: Fully implemented with comprehensive logging
-
-**Lava Corridor Environment**:
-- **3-row grid**: Row 0 (lava) | Row 1 (safe corridor) | Row 2 (lava)
-- **Actions**: UP, DOWN, LEFT, RIGHT, STAY (5 actions per agent)
-- **Observations**: Fully observable positions (x, y)
-- **Goals**: All agents must reach (goal_x, safe_y)
-- **Termination**: Lava hit, collision, or goal reached
-
-**Key Methods**:
-- `shared_outcomes()` - Returns list of safe (x, y) positions
-- `shared_outcome_obs_indices()` - Returns observation indices for returnability
-- `pos_to_obs_index()` / `obs_index_to_pos()` - Position ↔ observation mapping
-- `render()` - ASCII visualization
-- `build_generative_model_for_env()` - Constructs A, B, C, D matrices
-
-**Logging**:
-- Initialization: grid dimensions, start positions, goal
-- Reset: per-agent positions and observation indices
-- Step: actions, position changes, lava hits, collisions, success
-- All key events (lava, collision, goal) logged at WARNING/INFO level
-
-### Data Flow
-
-```
-Experiment → rollout() → run_tom_step() → policy search (with optional F-prior)
-                  ↓
-         Extract trees from final timestep
-                  ↓
-    compute_path_flexibility_for_tree()
-                  ↓
-         Aggregate metrics & analyze
-```
-
----
-
-## Phase 1-6 Implementation Roadmap
-
-This project follows a **progressive complexity roadmap** to build up from single-agent planning to full multi-agent experiments with flexibility-aware priors. Each phase is designed to isolate specific capabilities and validate them before adding complexity.
-
-### Phase 1: Single-Agent TOM Planner (EFE-Only) ✅ IN PROGRESS
-
-**Goal**: Implement baseline active inference planner with **risk-based EFE only** (no empathy, no flexibility).
-
-**Components**:
-- ✅ `tom/planning/si_lava.py` - Single-agent planner with:
-  - `propagate_state()` - Forward belief propagation
-  - `compute_risk_G()` - Risk-based EFE computation
-  - `efe_risk_only()` - Policy posterior q(π) ∝ exp(-γG)
-  - `LavaPlanner` - Planner class for LavaAgent
-- ⏳ `scripts/run_lava_si.py` - Demo single-agent rollout
-- ⏳ Verify single-agent planning works correctly
-
-**Decision rule**:
-```
-G(π) = -E_qs[E_o[C(o)]]  (pragmatic value only)
-q(π) = softmax(-γ G(π))
-```
-
-**Test criteria**:
-- Agent successfully navigates lava corridor
-- Reaches goal state
-- Avoids lava cells
-- No crashes or numerical issues
-
----
-
-### Phase 2: Empathic Planner (α Parameter) ✅ COMPLETED
-
-**Goal**: Add **empathy** to the planner—agent i weights agent j's EFE, with agents observing each other's positions to enable true coordination.
-
-**Key Innovation**: Extended observations allow agents to **see** where the other agent is, enabling coordination that was impossible with symmetric starting positions.
-
-**Components**:
-- ✅ `tom/planning/si_empathy_lava.py` - Empathic planner with:
-  - `EmpathicLavaPlanner` - Planner with configurable empathy α ∈ [0, 1]
-  - `compute_empathic_G()` - Social EFE: G_social = G_i + α·G_j
-  - `compute_other_agent_G()` - Theory of Mind: agent i simulates agent j's planning
-  - `efe_empathic()` - Policy posterior q(π) ∝ exp(-γ G_social)
-
-- ✅ `tom/envs/env_lava_v2.py` - Multi-variant environment with:
-  - **Extended observations**: Each agent observes `(my_position, other_position)`
-  - Support for multiple layout variants with different coordination challenges
-  - Configurable starting positions (agents no longer spawn at same location)
-  - Proper collision/lava/goal detection with detailed info dict
-
-- ✅ `tom/envs/env_lava_variants.py` - Four environment layouts:
-  - **Narrow** (control): Single-file corridor - collision mathematically unavoidable
-  - **Wide**: Multi-row corridor - agents can pass each other, coordination possible
-  - **Bottleneck**: Wide→narrow→wide - tests sequential coordination timing
-  - **Risk-Reward**: Fast risky path vs slow safe detour - tests risk preferences
-
-- ✅ `scripts/run_empathy_experiments.py` - Comprehensive experimental suite:
-  - Tests **all environment variants** (wide, bottleneck)
-  - **Symmetric empathy**: (α_i, α_j) ∈ {(0.0, 0.0), (0.5, 0.5), (1.0, 1.0)}
-  - **Asymmetric empathy**: (α_i, α_j) ∈ {(1.0, 0.0), (0.0, 1.0)} - tests altruist-selfish dynamics
-  - Produces formatted results tables with collision/goal/success metrics
-  - Includes qualitative interpretation (EXCELLENT/MODERATE/POOR/FAILED coordination)
-
-- ✅ `tests/test_lava_v2_env.py` - Comprehensive test suite:
-  - Tests all layout variants creation
-  - Verifies extended observations include other agent's position
-  - Tests collision detection, goal reaching, rendering
-  - Validates symmetric observation property
-
-**Decision rule**:
-```
-G_social^i(π) = G_i(π) + α · G_j(π)
-q(π) = softmax(-γ G_social(π))
-```
-
-**Parameters**:
-- α ∈ [0, 1]: Empathy weight (0 = selfish, 1 = fully prosocial)
-
-**Test criteria**:
-- ✅ α = 0 recovers Phase 1 behavior (pure selfish EFE)
-- ✅ α > 0 shows coordinated behavior when environment allows it
-- ✅ Agents observe each other's positions via extended observations
-- ✅ Multiple environment layouts test different coordination scenarios
-
-**Expected Results**:
-- **Narrow corridor**: All empathy levels fail (no coordination strategy exists)
-- **Wide corridor**:
-  - α=0.0 (selfish): High collision rate (~80%), poor coordination
-  - α=0.5 (balanced): Moderate success (~50%), some coordination
-  - α=1.0 (prosocial): High success (>80%), excellent coordination
-- **Asymmetric empathy**: Altruist-selfish pairs show exploitation (altruist defers, selfish doesn't)
-- **Bottleneck**: Requires higher empathy (α≥0.5) for successful sequential navigation
-
----
-
-### Phase 3: F-Aware Integration (κ, β Parameters) ⏳ PENDING
-
-**Goal**: Integrate **flexibility-aware policy prior** with empathy planner.
-
-**Components**:
-- `tom/planning/si_F_aware_lava.py` - F-aware planner with:
-  - `FAwareLavaPlanner` - Extends `EmpathicLavaPlanner` with κ, β
-  - `compute_F_prior()` - Flexibility prior over policies
-  - `compute_joint_objective()` - J_i = G_i + α·G_j - (κ/γ)[F_i + β·F_j]
-
-**Decision rule**:
-```
-J_i(π) = G_i(π) + α·G_j(π) - (κ/γ)[F_i(π) + β·F_j(π)]
-q(π) = softmax(-γ J_i(π))
-```
-
-**Parameters**:
-- α: Empathy weight (from Phase 2)
-- κ ≥ 0: Flexibility preference strength (0 = no F-prior)
-- β ∈ [0, 1]: Joint flexibility weight (0 = only own F, 1 = equal weighting)
-
-**Test criteria**:
-- κ = 0 recovers Phase 2 behavior
-- κ > 0 biases toward high-F policies
-- β controls individual vs joint flexibility tradeoff
-
----
-
-### Phase 4: Multi-Agent TOM Rollout ⏳ PENDING
-
-**Goal**: Implement full **multi-agent rollouts** with all three planners (Phase 1-3).
-
-**Components**:
-- `scripts/run_lava_multiagent.py` - Multi-agent rollout script
-- Integration with `LavaV1Env` for collision/lava detection
-- Belief tracking and synchronization
-- Policy selection with optional F-prior
-
-**Features**:
-- Two-agent lava corridor navigation
-- Collision detection and logging
-- Success tracking (individual and joint)
-- Comprehensive metrics logging
-
-**Test criteria**:
-- Both agents complete episodes without crashes
-- Metrics are logged correctly (G_i, G_j, F_i, F_j, actions, beliefs)
-- Collision/lava/success flags are accurate
-
----
-
-### Phase 5: Experiments 1 & 2 ⏳ PENDING
-
-**Goal**: Run full experiments to test **two key hypotheses**.
-
-#### Experiment 1: Natural F-EFE Correlation
-
-**Hypothesis**: High joint flexibility naturally correlates with low joint EFE (no explicit F-prior needed).
-
-**Conditions**:
-1. **Baseline (α=0, κ=0)**: Pure selfish EFE minimization
-2. **Empathy-only (α>0, κ=0)**: Empathy without flexibility prior
-
-**Metrics**:
-- Correlation: F_joint vs G_joint across all considered policies
-- Behavioral: Collision rate, goal achievement, bottleneck usage
-- Policy selection: Do agents naturally choose high-F policies?
-
-**Script**: `experiments/exp1_flex_vs_efe.py`
-
-#### Experiment 2: F-Aware Prior Effectiveness
-
-**Hypothesis**: Explicit F-aware prior improves coordination and reduces catastrophic failures.
-
-**Conditions**:
-1. **No F-prior (κ=0)**: Baseline from Exp 1
-2. **Small F-prior (κ=0.5)**: Moderate flexibility bias
-3. **Medium F-prior (κ=1.0)**: Balanced F-EFE tradeoff
-4. **Large F-prior (κ=2.0)**: Strong flexibility preference
-
-**Metrics**:
-- F vs EFE tradeoff: Plot F(π_chosen) vs G(π_chosen) for each κ
-- Safety: Collision rates, lava hits
-- Efficiency: Goal achievement time, path length
-- Resilience: Recovery from perturbations (layout changes mid-episode)
-
-**Script**: `experiments/exp2_flex_prior.py`
-
----
-
-### Phase 6: Documentation & Cleanup ⏳ PENDING
-
-**Goal**: Finalize documentation, create analysis notebooks, prepare for publication.
-
-**Components**:
-- Update all docstrings and type hints
-- Create comprehensive tutorial notebooks
-- Write technical report (methods, results, discussion)
-- Generate publication-quality plots
-- Create demo videos/GIFs of agent behavior
-- Archive experiment results and configurations
-
-**Deliverables**:
-- `notebooks/tutorial_single_agent.ipynb`
-- `notebooks/tutorial_multiagent.ipynb`
-- `notebooks/analysis_exp1.ipynb`
-- `notebooks/analysis_exp2.ipynb`
-- `docs/technical_report.pdf`
-- `results/` directory with all experiment outputs
-
----
-
-## Experimental Design Matrix
-
-To ensure proper **condition comparison** and **hypothesis testing**, we structure experiments as follows:
-
-### Experiment 1: Testing Natural F-EFE Correlation
-
-| Condition | α (Empathy) | κ (F-prior) | Purpose |
-|-----------|-------------|-------------|---------|
-| Baseline  | 0.0         | 0.0         | Pure selfish EFE (no empathy, no F) |
-| Empathy   | 0.5, 1.0    | 0.0         | Does empathy alone lead to high F? |
-
-**Analysis**:
-- **Correlation analysis**: Scatter plot F_joint vs G_joint for all policies considered during planning
-- **Policy selection**: Do selected policies cluster in high-F, low-G region?
-- **Behavioral metrics**: Compare collision rates, goal achievement across conditions
-- **Statistical tests**: Pearson correlation F vs G, t-test between conditions
-
-**Expected outcomes**:
-- If natural correlation exists: Empathy condition should show negative F-G correlation
-- If no natural correlation: Need explicit F-prior (Experiment 2)
-
----
-
-### Experiment 2: Testing F-Aware Prior Effectiveness
-
-| Condition | α (Empathy) | κ (F-prior) | β (Joint F) | Purpose |
-|-----------|-------------|-------------|-------------|---------|
-| No F      | 0.5         | 0.0         | N/A         | Baseline (same as Exp 1 Empathy) |
-| Small F   | 0.5         | 0.5         | 0.5         | Moderate flexibility bias |
-| Medium F  | 0.5         | 1.0         | 0.5         | Balanced F-EFE tradeoff |
-| Large F   | 0.5         | 2.0         | 0.5         | Strong flexibility preference |
-
-**Analysis**:
-- **F vs EFE tradeoff**: Plot F(π_chosen) vs G(π_chosen) for each κ
-  - Expect: As κ increases, F↑ and G↑ (sacrificing EFE for flexibility)
-- **Safety metrics**: Collision rate, lava hit rate (expect: decrease with κ)
-- **Efficiency metrics**: Goal achievement time, path length (expect: increase with κ)
-- **Resilience test**: Introduce layout perturbations mid-episode, measure recovery success
-- **Statistical tests**: ANOVA across κ conditions, post-hoc pairwise comparisons
-
-**Expected outcomes**:
-- κ > 0 should reduce catastrophic failures (collisions, lava)
-- Trade-off: Higher κ → safer but slower/less efficient
-- Resilience: Higher κ → better recovery from perturbations
-
----
-
-### Metrics Logged Per Episode
-
-**Per-policy metrics** (during planning):
-- G_i(π), G_j(π), G_joint(π) - Expected Free Energy
-- F_i(π), F_j(π), F_joint(π) - Path Flexibility
-  - E(π) - Empowerment component
-  - R(π) - Returnability component
-  - O(π) - Overlap component
-- q(π) - Policy posterior
-- Selected: Boolean flag for chosen policy
-
-**Per-timestep metrics** (during execution):
-- Observations: o_i, o_j
-- Beliefs: qs_i, qs_j
-- Actions: a_i, a_j
-- Positions: (x_i, y_i), (x_j, y_j)
-
-**Episode-level outcomes**:
-- Success flags: goal_i, goal_j, goal_joint
-- Failure flags: collision, lava_hit_i, lava_hit_j
-- Efficiency: timesteps_to_goal, path_length
-- Safety: num_close_calls (near-collisions), bottleneck_usage
-
-**Saved outputs**:
-- `results/exp1/metrics.pkl` - All per-policy and per-timestep data
-- `results/exp1/behavioral_stats.json` - Aggregated episode outcomes
-- `results/exp2/metrics_kappa_{k}.pkl` - Per-condition data
-- `results/exp2/comparison_stats.json` - Cross-condition comparison
-
----
-
-## Implementation Status
-
-### ⭐ TOM-Style JAX Architecture (Ready to Use)
-
-The new **TOM-style pure JAX** architecture is complete and production-ready:
-
-- [x] **`LavaModel`**: Pure JAX dataclass with dict-structured A, B, C, D
-- [x] **`LavaAgent`**: Thin wrapper around model with policies
-- [x] **`LavaV1Env`**: JAX environment wrapper with collision/lava detection
-- [x] **Manual Bayesian inference**: Explicit state updates without PyMDP
-- [x] **smoke_test_tom.py**: Complete verification suite (4 tests)
-- [x] **Full transparency**: Every computation visible and debuggable
-
-**Status**: All smoke tests passing ✅
-
-**Next steps**:
-1. Add TOM-style EFE planning (port from `tom/planning/si_tom.py`)
-2. Implement multi-agent rollouts with TOM
-3. Connect to path flexibility metrics
-
-### ✅ Core System (Complete)
-- [x] Refactor ToM into standalone `tom/si_tom.py` module
-- [x] Add comprehensive logging to all modules
-- [x] Reorganize repository structure (src/, experiments/, notebooks/)
-- [x] Implement `metrics/path_flexibility.py` (E, R, O computations)
-- [x] Create shared type system (src/common/types.py)
-- [x] Write `experiments/exp1_flex_vs_efe.py` script
-- [x] Write `experiments/exp2_flex_prior.py` script
-- [x] **Implement `compute_path_flexibility_for_tree()` with full ToM tree integration**
-- [x] **Implement helper functions: `root_idx()`, `get_root_policy_nodes()`, `predict_obs_dist()`, `get_p_o_given_a()`**
-- [x] **Implement clean `rollout_beliefs_and_obs()` API for forward simulation**
-- [x] **Implement F-aware prior: `compute_F_arrays_for_policies()`, `compute_q_pi_with_F_prior()`**
-- [x] **Create `src/tom/si_tom_F_prior.py` with `run_tom_step_with_F_prior()` and `ToMPolicyConfig`**
-- [x] **Implement `LavaCorridorEnv` with `shared_outcomes()` and `build_generative_model_for_env()`**
-- [x] **Add comprehensive logging to LavaCorridorEnv (initialization, steps, lava, collision, success)**
-- [x] **Create `src/envs/rollout_lava.py` with multi-agent rollout functions for Experiments 1 and 2**
-- [x] **Implement `rollout_exp1()`, `rollout_exp2()`, and `rollout_multi_agent_lava()` with collision/success detection**
-- [x] **Update experiment scripts (exp1, exp2) to use new rollout functions and LavaCorridorEnv**
-- [x] **Implement ToM agent factory (`src/agents/tom_agent_factory.py`)**
-- [x] **Integrate PyMDP agents with proper A, B, C, D matrices**
-- [x] **Connect real ToM step functions to rollout**
-- [x] **Implement policy enumeration for planning horizon**
-- [x] **Add belief tracking and tree storage in rollouts**
-
-### ✅ Testing Infrastructure (Complete)
-- [x] **Unit tests for path flexibility metrics** (`tests/test_path_flexibility_metrics.py`)
-  - Tests E, R, O, F individually
-  - Edge cases, known scenarios
-  - Numerical stability
-- [x] **Unit tests for F-aware prior** (`tests/test_F_aware_prior.py`)
-  - Verifies κ=0 recovers baseline
-  - Tests flexibility biasing
-  - Tests β weighting
-- [x] **Unit tests for agent factory** (`tests/test_agent_factory.py`)
-  - Verifies A, B, C, D matrices
-  - Tests transition dynamics
-  - Tests shared outcomes extraction
-- [x] **Integration tests** (`tests/test_integration_rollout.py`)
-  - End-to-end Exp1 and Exp2 rollouts
-  - Output structure verification
-- [x] **Smoke test suite** (`smoke_test.py`)
-  - Quick system verification
-  - Import checks
-  - Basic rollout tests
-
-### 🚀 Ready to Run
-
-The system is now **production-ready** for experiments:
-
-```bash
-# Quick verification (TOM-style - recommended)
-python smoke_test_tom.py
-
-# Quick verification (Legacy PyMDP)
-python smoke_test.py
-
-# Run unit tests
-pytest tests/ -v
-
-# Run Experiment 1 (κ=0, measure F-EFE correlation)
-python experiments/exp1_flex_vs_efe.py
-
-# Run Experiment 2 (κ>0, F-aware prior sweep)
-python experiments/exp2_flex_prior.py
-```
-
-### 📊 What Works
-
-**TOM-Style JAX (Recommended):**
-- ✓ Pure JAX generative models (LavaModel dataclass)
-- ✓ Thin agent wrappers (LavaAgent with multi-horizon policies)
-- ✓ Multiple JAX environment variants (LavaV1Env, LavaV2Env)
-- ✓ Extended observations (agents see each other's positions)
-- ✓ Four environment layouts (narrow, wide, bottleneck, risk-reward)
-- ✓ Manual Bayesian inference (no PyMDP agent)
-- ✓ **Phase 1**: Single-agent EFE-only planner ✅
-- ✓ **Phase 2**: Empathic multi-agent planner with asymmetric empathy ✅
-- ✓ Full transparency and debuggability
-- ✓ Comprehensive test coverage for all variants
-
-**Legacy PyMDP Path:**
-- ✓ Environment with collision/lava/success detection
-- ✓ PyMDP agents with proper generative models
-- ✓ ToM integration (both standard and F-aware)
-- ✓ Path flexibility computation (E, R, O, F)
-- ✓ Empowerment estimation
-- ✓ Multi-agent rollouts
-- ✓ Result tracking and storage
-- ✓ Comprehensive test coverage
-
-### 🔧 Compatibility & Implementation Notes
-
-The codebase includes several compatibility fixes for PyMDP integration:
-
-**1. PyMDP Container Format**
-- PyMDP `Agent` expects matrices wrapped in lists: `A=[A_matrix]` not `A=A_matrix`
-- This is handled automatically in `tom_agent_factory.py`
-- Single-modality agents use lists of length 1 for A, B, C, D
-
-**2. Missing `dirichlet_like` Fallback**
-- Some PyMDP versions lack `pymdp.utils.dirichlet_like`
-- Local implementation provided in `tom_agent_factory.py` and `empathetic_agent.py`
-- Falls back automatically if import fails
-
-**3. Environment Constraints**
-- `LavaCorridorEnv` requires exactly 3 rows (lava-safe-lava design)
-- Use `height=3` in all configurations
-- Lava positions are hard-coded, not configurable
-
-**4. Generative Model Format**
-- `build_generative_model_for_env()` returns a dictionary `{"A": ..., "B": ..., "C": ..., "D": ..., "policies": []}`
-- Agent factory extracts and wraps matrices appropriately
-
-### 📝 Minor Remaining Tasks
-- [ ] Compute path flexibility from trees in experiments (function exists, just needs calling)
-- [ ] Add visualization/plotting utilities
-- [ ] Run full experiments and analyze results
-
-### Roadmap / Future Work
-
-### Mid-term (Extensions)
-- [ ] Multi-agent (K > 2) experiments
-- [ ] More complex environments (partially observable, larger state spaces)
-- [ ] Connect to geodesic metrics from "Belief Geodesics" framework
-- [ ] Preference plasticity (agents learn C over time)
-- [ ] Power/precision asymmetry experiments
-
-### Long-term (Research Directions)
-- [ ] Hierarchical ToM (depth > 1 nested beliefs)
-- [ ] Continuous action/state spaces
-- [ ] Language-grounded communication protocols
-- [ ] Connection to game-theoretic equilibria
-- [ ] Formal proofs of alignment under flexibility constraints
-
----
-
-## Citation
-
-If you use this code or build on these ideas, please cite:
+If you use this codebase or its ideas, please cite:
 
 ```bibtex
-@software{path_flexibility_tom_2025,
+@software{albarracin2025_pathflexibility,
   title={Path Flexibility, Empathy, and Theory of Mind in Active Inference},
   author={Mahault Albarracin},
   year={2025},
@@ -1247,15 +288,7 @@ If you use this code or build on these ideas, please cite:
 }
 ```
 
----
+### Contact
 
-## License
-
-MIT License - See LICENSE file for details.
-
----
-
-## Contact
-
-For questions, suggestions, or collaborations:
-- GitHub Issues: [https://github.com/mahault/Alignment-experiments/issues](https://github.com/mahault/Alignment-experiments/issues)
+Issues & discussions:
+https://github.com/mahault/Alignment-experiments/issues
