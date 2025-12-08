@@ -368,5 +368,151 @@ class TestModelConsistency:
         print(f"  Model 2 goal at x=4: C={C2[goal2_idx]:.2f}")
 
 
+class TestVerticalMovement:
+    """Test that agents can choose UP/DOWN actions when incentivized."""
+
+    def test_down_movement_from_goal_below(self):
+        """
+        Test: Agent at (0,1) with goal at (0,2) should choose DOWN.
+
+        This tests that:
+        1. DOWN action is properly encoded in B matrix
+        2. C preferences incentivize moving toward goal vertically
+        3. EFE computation correctly identifies DOWN as best action
+        """
+        from tom.planning.si_lava import compute_risk_G, LavaPlanner
+
+        # Setup: goal directly below starting position
+        width, height = 3, 3
+        safe_cells = [(x, y) for x in range(width) for y in range(height)]  # All safe
+        start_pos = (0, 1)  # Middle row
+        goal_pos = (0, 2)   # Bottom row - requires DOWN
+
+        model = LavaModel(
+            width=width,
+            height=height,
+            goal_x=goal_pos[0],
+            goal_y=goal_pos[1],
+            safe_cells=safe_cells,
+            start_pos=start_pos
+        )
+
+        agent = LavaAgent(model, horizon=1, gamma=8.0)
+
+        # Initial belief at starting position
+        qs = np.zeros(model.num_states)
+        start_idx = start_pos[1] * width + start_pos[0]
+        qs[start_idx] = 1.0
+
+        # Compute EFE
+        B = np.asarray(model.B["location_state"])
+        C = np.asarray(model.C["location_obs"])
+        policies = np.asarray(agent.policies)
+
+        G = compute_risk_G(qs, B, C, policies)
+
+        best_action = np.argmin(G)
+        action_names = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
+
+        print(f"\nVertical movement test (goal below):")
+        print(f"  Start: {start_pos}, Goal: {goal_pos}")
+        for i, name in enumerate(action_names):
+            marker = " <-- BEST" if i == best_action else ""
+            print(f"  {name:6s}: G = {G[i]:7.3f}{marker}")
+
+        # Verify DOWN was chosen
+        assert best_action == 1, \
+            f"Expected DOWN (1), but got {action_names[best_action]} ({best_action})"
+
+    def test_up_movement_from_goal_above(self):
+        """Test: Agent at (0,1) with goal at (0,0) should choose UP."""
+        from tom.planning.si_lava import compute_risk_G
+
+        width, height = 3, 3
+        safe_cells = [(x, y) for x in range(width) for y in range(height)]
+        start_pos = (0, 1)  # Middle row
+        goal_pos = (0, 0)   # Top row - requires UP
+
+        model = LavaModel(
+            width=width,
+            height=height,
+            goal_x=goal_pos[0],
+            goal_y=goal_pos[1],
+            safe_cells=safe_cells,
+            start_pos=start_pos
+        )
+
+        agent = LavaAgent(model, horizon=1, gamma=8.0)
+
+        qs = np.zeros(model.num_states)
+        start_idx = start_pos[1] * width + start_pos[0]
+        qs[start_idx] = 1.0
+
+        B = np.asarray(model.B["location_state"])
+        C = np.asarray(model.C["location_obs"])
+        policies = np.asarray(agent.policies)
+
+        G = compute_risk_G(qs, B, C, policies)
+        best_action = np.argmin(G)
+
+        action_names = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
+        print(f"\nVertical movement test (goal above):")
+        print(f"  Start: {start_pos}, Goal: {goal_pos}")
+        for i, name in enumerate(action_names):
+            marker = " <-- BEST" if i == best_action else ""
+            print(f"  {name:6s}: G = {G[i]:7.3f}{marker}")
+
+        assert best_action == 0, \
+            f"Expected UP (0), but got {action_names[best_action]} ({best_action})"
+
+    def test_diagonal_goal_allows_both_directions(self):
+        """Test: With diagonal goal, both horizontal and vertical movement reduce distance."""
+        from tom.planning.si_lava import compute_risk_G
+
+        width, height = 3, 3
+        safe_cells = [(x, y) for x in range(width) for y in range(height)]
+        start_pos = (0, 0)  # Top left
+        goal_pos = (2, 2)   # Bottom right
+
+        model = LavaModel(
+            width=width,
+            height=height,
+            goal_x=goal_pos[0],
+            goal_y=goal_pos[1],
+            safe_cells=safe_cells,
+            start_pos=start_pos
+        )
+
+        agent = LavaAgent(model, horizon=1, gamma=8.0)
+
+        qs = np.zeros(model.num_states)
+        start_idx = start_pos[1] * width + start_pos[0]
+        qs[start_idx] = 1.0
+
+        B = np.asarray(model.B["location_state"])
+        C = np.asarray(model.C["location_obs"])
+        policies = np.asarray(agent.policies)
+
+        G = compute_risk_G(qs, B, C, policies)
+
+        action_names = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
+        print(f"\nDiagonal goal test:")
+        print(f"  Start: {start_pos}, Goal: {goal_pos}")
+        for i, name in enumerate(action_names):
+            print(f"  {name:6s}: G = {G[i]:7.3f}")
+
+        # Both RIGHT and DOWN should have equal EFE (both reduce distance by 1)
+        G_down = G[1]
+        G_right = G[3]
+
+        assert np.abs(G_down - G_right) < 0.01, \
+            f"DOWN (G={G_down:.3f}) and RIGHT (G={G_right:.3f}) should be equally preferred"
+
+        # Neither UP nor LEFT should be best (they move away from goal)
+        best_action = np.argmin(G)
+        assert best_action not in [0, 2], \
+            f"UP and LEFT should not be chosen for bottom-right goal (chose {action_names[best_action]})"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])

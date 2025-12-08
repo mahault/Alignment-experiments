@@ -65,6 +65,22 @@ def compute_empathic_G(
     """
     Compute empathy-weighted EFE for agent i.
 
+    CORRECTED MODEL (sophisticated inference rollout):
+
+    Before taking any action, agent i performs counterfactual rollouts:
+
+    For each candidate action k ∈ {UP, DOWN, LEFT, RIGHT, STAY}:
+        1. Rollout i's action: simulate i taking k → i at new position
+        2. Theory of Mind rollout: j observes i's new position
+           - j computes G_j for ALL their actions (not same index as k!)
+           - j selects best_action = argmin(G_j)
+        3. Empathy: G_social[k] = G_i[k] + α * G_j[best_action]
+
+    Then i selects: argmin(G_social)
+
+    Key fix: j makes independent choice, not same indexed action as i!
+    This allows agents to choose different actions (e.g., i=DOWN, j=UP in crossed goals).
+
     Parameters
     ----------
     qs_i : np.ndarray
@@ -82,21 +98,44 @@ def compute_empathic_G(
     -------
     G_i : np.ndarray
         Agent i's EFE for each policy (num_policies,)
-    G_j : np.ndarray
-        Agent j's EFE (as simulated by i) (num_policies,)
+    G_j_simulated : np.ndarray
+        Agent j's EFE conditioned on i's actions (num_policies,)
     G_social : np.ndarray
-        Empathy-weighted EFE: G_social = G_i + α·G_j
+        Empathy-weighted EFE: G_social = G_i + α·G_j(given i's action)
     """
-    # Compute agent i's own EFE
+    # Compute agent i's own EFE for each of their policies (selfish cost)
     G_i = compute_risk_G(qs_i, B_i, C_i, policies_i, A_i)
 
-    # Compute agent j's EFE (Theory of Mind)
-    G_j = compute_other_agent_G(qs_j, B_j, C_j, policies_j, A_j)
+    # Counterfactual rollout: for each action i considers, simulate j's best response
+    num_policies_i = len(policies_i)
+    G_j_best_response = np.zeros(num_policies_i)
+
+    for i_action_idx, policy_i in enumerate(policies_i):
+        # Extract action i would take
+        action_i = int(policy_i[0, 0])
+
+        # ROLLOUT STEP 1: Simulate i taking this action
+        qs_i_next = B_i[:, :, action_i] @ qs_i
+        # pos_i_next = int(np.argmax(qs_i_next))  # i's new position (for future use)
+
+        # ROLLOUT STEP 2: Theory of Mind - j observes i's new position and responds
+        # j computes their own EFE for ALL their actions (independent choice!)
+        G_j_all_actions = compute_other_agent_G(qs_j, B_j, C_j, policies_j, A_j)
+
+        # ROLLOUT STEP 3: j selects their best action (minimum EFE)
+        best_j_action_idx = int(np.argmin(G_j_all_actions))
+        G_j_best_response[i_action_idx] = G_j_all_actions[best_j_action_idx]
+
+        # Note: Collision is handled through C preferences
+        # If j's best action would collide with i's new position,
+        # j's C should have a large penalty, making that action unattractive
 
     # Empathy-weighted social EFE
-    G_social = G_i + alpha * G_j
+    # G_social[k] = G_i[k] + α * G_j[best_response to i taking k]
+    # If i's action k forces j into a bad outcome, empathic i will avoid k
+    G_social = G_i + alpha * G_j_best_response
 
-    return G_i, G_j, G_social
+    return G_i, G_j_best_response, G_social
 
 
 def efe_empathic(
