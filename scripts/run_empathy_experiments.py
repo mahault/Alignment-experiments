@@ -2,7 +2,7 @@
 Comprehensive empathy experiments across environment variants.
 
 This script systematically tests:
-1. All environment layouts (narrow, wide, bottleneck, risk_reward)
+1. Selected environment layouts (wide, bottleneck, crossed_goals)
 2. Symmetric empathy (both agents same α)
 3. Asymmetric empathy (different α for each agent)
 4. Clear analysis comparing coordination outcomes
@@ -169,9 +169,17 @@ def run_episode(
             print(f"      G_social_i (mixed):   {G_social_i}")
             print(f"      Difference (G_i - G_j_sim): {G_i - G_j_sim}")
             if planner_i.alpha == 0:
-                print(f"      → SELFISH: argmin(G_i) = {np.argmin(G_i)}, chosen policy index = {np.argmin(G_i)}, first action = {action_i} ({action_names[action_i]})")
+                print(
+                    f"      → SELFISH: argmin(G_i) = {np.argmin(G_i)}, "
+                    f"chosen policy index = {np.argmin(G_i)}, "
+                    f"first action = {action_i} ({action_names[action_i]})"
+                )
             else:
-                print(f"      → EMPATHIC: argmin(G_i) = {np.argmin(G_i)}, argmin(G_social) = {np.argmin(G_social_i)}, chosen = {action_i} ({action_names[action_i]})")
+                print(
+                    f"      → EMPATHIC: argmin(G_i) = {np.argmin(G_i)}, "
+                    f"argmin(G_social) = {np.argmin(G_social_i)}, "
+                    f"chosen = {action_i} ({action_names[action_i]})"
+                )
 
             print(f"    Agent j (α={planner_j.alpha}):")
             print(f"      G_j (self-interest):  {G_j}")
@@ -179,27 +187,54 @@ def run_episode(
             print(f"      G_social_j (mixed):   {G_social_j}")
             print(f"      Difference (G_j - G_i_sim): {G_j - G_i_sim}")
             if planner_j.alpha == 0:
-                print(f"      → SELFISH: argmin(G_j) = {np.argmin(G_j)}, chosen action = {action_j}")
+                print(
+                    f"      → SELFISH: argmin(G_j) = {np.argmin(G_j)}, "
+                    f"chosen action = {action_j}"
+                )
             else:
-                print(f"      → EMPATHIC: argmin(G_j) = {np.argmin(G_j)}, argmin(G_social) = {np.argmin(G_social_j)}, chosen = {action_j}")
+                print(
+                    f"      → EMPATHIC: argmin(G_j) = {np.argmin(G_j)}, "
+                    f"argmin(G_social) = {np.argmin(G_social_j)}, "
+                    f"chosen = {action_j}"
+                )
 
             # Check if empathy changes policy choice
-            selfish_choice_i = np.argmin(G_i)
-            empathic_choice_i = np.argmin(G_social_i)
-            selfish_choice_j = np.argmin(G_j)
-            empathic_choice_j = np.argmin(G_social_j)
+            selfish_choice_i = int(np.argmin(G_i))
+            empathic_choice_i = int(np.argmin(G_social_i))
+            selfish_choice_j = int(np.argmin(G_j))
+            empathic_choice_j = int(np.argmin(G_social_j))
 
             # Show policy descriptions
             print(f"\n      Policy choices:")
-            print(f"        Selfish i would choose: policy {selfish_choice_i} ({describe_policy(selfish_choice_i, len(G_i))})")
-            print(f"        Empathic i chose: policy {empathic_choice_i} ({describe_policy(empathic_choice_i, len(G_i))})")
-            print(f"        Selfish j would choose: policy {selfish_choice_j} ({describe_policy(selfish_choice_j, len(G_j))})")
-            print(f"        Empathic j chose: policy {empathic_choice_j} ({describe_policy(empathic_choice_j, len(G_j))})")
+            print(
+                f"        Selfish i would choose: policy {selfish_choice_i} "
+                f"({describe_policy(selfish_choice_i, len(G_i))})"
+            )
+            print(
+                f"        Empathic i chose: policy {empathic_choice_i} "
+                f"({describe_policy(empathic_choice_i, len(G_i))})"
+            )
+            print(
+                f"        Selfish j would choose: policy {selfish_choice_j} "
+                f"({describe_policy(selfish_choice_j, len(G_j))})"
+            )
+            print(
+                f"        Empathic j chose: policy {empathic_choice_j} "
+                f"({describe_policy(empathic_choice_j, len(G_j))})"
+            )
 
             if selfish_choice_i != empathic_choice_i:
-                print(f"\n      ⚠️  EMPATHY CHANGES i's POLICY: {describe_policy(selfish_choice_i, len(G_i))} → {describe_policy(empathic_choice_i, len(G_i))}")
+                print(
+                    f"\n      ⚠️  EMPATHY CHANGES i's POLICY: "
+                    f"{describe_policy(selfish_choice_i, len(G_i))} → "
+                    f"{describe_policy(empathic_choice_i, len(G_i))}"
+                )
             if selfish_choice_j != empathic_choice_j:
-                print(f"      ⚠️  EMPATHY CHANGES j's POLICY: {describe_policy(selfish_choice_j, len(G_j))} → {describe_policy(empathic_choice_j, len(G_j))}")
+                print(
+                    f"      ⚠️  EMPATHY CHANGES j's POLICY: "
+                    f"{describe_policy(selfish_choice_j, len(G_j))} → "
+                    f"{describe_policy(empathic_choice_j, len(G_j))}"
+                )
             if selfish_choice_i == empathic_choice_i and selfish_choice_j == empathic_choice_j:
                 print(f"\n      → Empathy doesn't change policies (environment may be too permissive)")
             print()
@@ -234,9 +269,26 @@ def run_episode(
         B_i = np.asarray(model_i.B["location_state"])
         B_j = np.asarray(model_j.B["location_state"])
 
-        # Predict next state based on action
-        qs_i_pred = B_i[:, :, action_i] @ qs_i
-        qs_j_pred = B_j[:, :, action_j] @ qs_j
+        # Predict next state based on action (handles both 3D and 4D B)
+        if B_i.ndim == 3:
+            qs_i_pred = B_i[:, :, action_i] @ qs_i
+        elif B_i.ndim == 4:
+            # Marginalize over j's position using i's belief about j
+            qs_i_pred = np.zeros_like(qs_i)
+            for s_other in range(len(qs_j_observed)):
+                qs_i_pred += B_i[:, :, s_other, action_i] @ qs_i * qs_j_observed[s_other]
+        else:
+            raise ValueError(f"B_i must be 3D or 4D, got shape {B_i.shape}")
+
+        if B_j.ndim == 3:
+            qs_j_pred = B_j[:, :, action_j] @ qs_j
+        elif B_j.ndim == 4:
+            # Marginalize over i's position using j's belief about i
+            qs_j_pred = np.zeros_like(qs_j)
+            for s_other in range(len(qs_i_observed)):
+                qs_j_pred += B_j[:, :, s_other, action_j] @ qs_j * qs_i_observed[s_other]
+        else:
+            raise ValueError(f"B_j must be 3D or 4D, got shape {B_j.shape}")
 
         # Update with observation (using safe update to avoid NaN)
         next_obs_i = int(np.asarray(next_obs[0]["location_obs"])[0])
@@ -329,16 +381,21 @@ def print_results_table(results: List[Dict]):
         layout_results = [r for r in results if r["layout"] == layout]
 
         print(f"\n{'Layout: ' + layout.upper():-^100}")
-        print(f"\n{'α_i':<6} {'α_j':<6} {'Collision':<12} {'Lava i':<10} {'Lava j':<10} "
-              f"{'Goal i':<10} {'Goal j':<10} {'Joint Success':<15} {'Steps':<6}")
+        print(
+            f"\n{'α_i':<6} {'α_j':<6} {'Collision':<12} {'Lava i':<10} "
+            f"{'Lava j':<10} {'Goal i':<10} {'Goal j':<10} "
+            f"{'Joint Success':<15} {'Steps':<6}"
+        )
         print("-" * 100)
 
         for r in layout_results:
-            print(f"{r['alpha_i']:<6.1f} {r['alpha_j']:<6.1f} "
-                  f"{str(r['collision']):<12} "
-                  f"{str(r['lava_hit_i']):<10} {str(r['lava_hit_j']):<10} "
-                  f"{str(r['goal_reached_i']):<10} {str(r['goal_reached_j']):<10} "
-                  f"{str(r['joint_success']):<15} {r['timesteps']:<6}")
+            print(
+                f"{r['alpha_i']:<6.1f} {r['alpha_j']:<6.1f} "
+                f"{str(r['collision']):<12} "
+                f"{str(r['lava_hit_i']):<10} {str(r['lava_hit_j']):<10} "
+                f"{str(r['goal_reached_i']):<10} {str(r['goal_reached_j']):<10} "
+                f"{str(r['joint_success']):<15} {r['timesteps']:<6}"
+            )
 
     print("\n" + "=" * 100)
 
@@ -396,7 +453,7 @@ def main():
     print("=" * 100)
 
     # Experiment configuration
-    layouts_to_test = ["wide", "bottleneck", "crossed_goals"]  # Added crossed_goals
+    layouts_to_test = ["wide", "bottleneck", "crossed_goals"]
     empathy_configs = [
         (0.0, 0.0),  # Both selfish
         (0.5, 0.5),  # Both balanced
@@ -438,26 +495,26 @@ def main():
         print(f"  Start positions: {layout_info['start_positions']}")
 
         # Create models - each agent gets model with their own starting position AND goal
-        start_pos_i = layout_info['start_positions'][0]
-        start_pos_j = layout_info['start_positions'][1]
-        goal_pos_i = layout_info['goal_positions'][0]
-        goal_pos_j = layout_info['goal_positions'][1]
+        start_pos_i = layout_info["start_positions"][0]
+        start_pos_j = layout_info["start_positions"][1]
+        goal_pos_i = layout_info["goal_positions"][0]
+        goal_pos_j = layout_info["goal_positions"][1]
 
         model_i = LavaModel(
             width=env.width,
             height=env.height,
             goal_x=goal_pos_i[0],
             goal_y=goal_pos_i[1],
-            safe_cells=layout_info['safe_cells'],
-            start_pos=start_pos_i
+            safe_cells=layout_info["safe_cells"],
+            start_pos=start_pos_i,
         )
         model_j = LavaModel(
             width=env.width,
             height=env.height,
             goal_x=goal_pos_j[0],
             goal_y=goal_pos_j[1],
-            safe_cells=layout_info['safe_cells'],
-            start_pos=start_pos_j
+            safe_cells=layout_info["safe_cells"],
+            start_pos=start_pos_j,
         )
 
         for alpha_i, alpha_j in empathy_configs:
@@ -471,17 +528,20 @@ def main():
             planner_j = EmpathicLavaPlanner(agent_j, agent_i, alpha=alpha_j)
 
             # Enable verbose for specific tests to debug empathy
-            # - Crossed goals with asymmetric empathy (most interesting - must coordinate!)
-            # - Bottleneck with asymmetric empathy (coordination required)
-            # - Wide with balanced empathy (sanity check)
             verbose_debug = (
-                (layout_name == "crossed_goals" and alpha_i != alpha_j) or  # Asymmetric crossed
-                (layout_name == "bottleneck" and alpha_i != alpha_j) or  # Asymmetric bottleneck
-                (layout_name == "wide" and alpha_i == 0.5 and alpha_j == 0.5)  # Baseline check
+                (layout_name == "crossed_goals" and alpha_i != alpha_j)  # Asymmetric crossed
+                or (layout_name == "bottleneck" and alpha_i != alpha_j)  # Asymmetric bottleneck
+                or (layout_name == "wide" and alpha_i == 0.5 and alpha_j == 0.5)  # Baseline check
             )
 
             # Run episode
-            result = run_episode(env, planner_i, planner_j, max_timesteps=max_timesteps, verbose=verbose_debug)
+            result = run_episode(
+                env,
+                planner_i,
+                planner_j,
+                max_timesteps=max_timesteps,
+                verbose=verbose_debug,
+            )
             all_results.append(result)
 
             # Print immediate feedback
@@ -525,12 +585,20 @@ def save_results_to_csv(results: List[Dict]):
 
     # Reorder columns for readability
     column_order = [
-        "layout", "alpha_i", "alpha_j",
-        "joint_success", "goal_reached_i", "goal_reached_j",
-        "collision", "num_collisions",
-        "lava_hit_i", "lava_hit_j",
+        "layout",
+        "alpha_i",
+        "alpha_j",
+        "joint_success",
+        "goal_reached_i",
+        "goal_reached_j",
+        "collision",
+        "num_collisions",
+        "lava_hit_i",
+        "lava_hit_j",
         "timesteps",
-        "collision_timesteps", "trajectory_i", "trajectory_j"
+        "collision_timesteps",
+        "trajectory_i",
+        "trajectory_j",
     ]
 
     # Only include columns that exist
@@ -547,10 +615,12 @@ def save_results_to_csv(results: List[Dict]):
 
     # Summary by layout and empathy
     print(f"\n📈 Summary by layout:")
-    for layout in df['layout'].unique():
-        layout_df = df[df['layout'] == layout]
-        print(f"   {layout.upper()}: {layout_df['joint_success'].mean():.1%} success, "
-              f"{layout_df['collision'].mean():.1%} collision")
+    for layout in df["layout"].unique():
+        layout_df = df[df["layout"] == layout]
+        print(
+            f"   {layout.upper()}: {layout_df['joint_success'].mean():.1%} success, "
+            f"{layout_df['collision'].mean():.1%} collision"
+        )
 
 
 if __name__ == "__main__":
