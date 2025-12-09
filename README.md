@@ -141,37 +141,117 @@ Alignment-experiments/
 
 ### **LavaModel (Pure JAX Generative Model)**
 
-- Transparent A, B, C, D matrices  
-- Hard-coded lava corridor transitions  
-- No PyMDP dependency  
+Implements proper multi-agent Active Inference with:
+
+- **Joint B matrix**: B[s', s, s_other, a] conditions transitions on other agent's position
+  - Enforces single-occupancy: can't move into occupied cells
+  - Prevents edge swaps: both blocked if trying to swap positions
+- **Multi-modal observations**:
+  - `location_obs`: Agent's own position
+  - `other_location_obs`: Other agent's position (fully observable)
+  - `relation_obs`: Relational state (collision/proximity detection)
+- **Collision penalties in C matrix**:
+  - Same cell: C = -100 (CATASTROPHIC)
+  - Same row in narrow spaces: C = -1 (encourages turn-taking)
+  - Lava: C = -100 (unchanged)
+  - Goal: C = +10 (unchanged)
+- **Multi-step policies** (for horizon > 1):
+  - Straight-line policies: repeat each action H times
+  - Enables planning of multi-step detours
 
 ### **LavaAgent**
 
-- Multi-horizon policies  
-- Exposes model dicts  
-- Works with TOM planners  
+- Multi-horizon policies (H ≥ 1)
+- Exposes model dicts
+- Works with TOM planners
+- Supports both 3D (single-agent) and 4D (multi-agent) B matrices
 
 ### **LavaV2Env**
 
-- Multi-layout environment  
-- Agents observe both their own and the other agent's positions  
-- Supports Wide, Bottleneck, Narrow, and Risk-Reward layouts  
+- Multi-layout environment
+- Agents observe both their own and the other agent's positions
+- Supports Wide, Bottleneck, Narrow, Crossed Goals, and Risk-Reward layouts
 
 ### **EmpathicLavaPlanner**
 
-Computes:
+Implements proper Theory of Mind with recursive planning:
 
-- Self EFE  
-- Other-agent EFE via ToM  
-- Social EFE using α  
+- **Single-step (H=1)**: Conditions G_j on i's predicted next position
+- **Multi-step (H>1)**: Full recursive rollout over horizon
+  - For each timestep t:
+    1. i takes action a_i[t]
+    2. j observes i's new position
+    3. j computes G_j for ALL actions (independent choice)
+    4. j selects best_action = argmin(G_j | qs_i_next)
+    5. Both beliefs updated for next timestep
+  - Accumulated EFE over full horizon
+- **Empathy weight α**: G_social = G_i + α * G_j
+- **Handles 4D B matrices**: Proper marginalization over other agent's position
 
 ### **Flexibility-Aware ToM Planner**
 
 Adds:
 
-- Empowerment along policy rollout  
-- Returnability, overlap metrics  
-- κ, β hyperparameters  
+- Empowerment along policy rollout
+- Returnability, overlap metrics
+- κ, β hyperparameters
+
+---
+
+## **3.1. Implementation Details**
+
+### **Multi-Agent Physics in B Matrix**
+
+The B matrix now properly encodes multi-agent physics:
+
+```
+B[s_next, s_current, s_other, action]
+```
+
+This implements the constraint: **agents cannot move into cells currently occupied by other agents**.
+
+Example:
+- Agent at (0,1), other at (1,1)
+- Agent tries RIGHT (action 3)
+- B[(1,1), (0,1), (1,1), 3] = 0.0 (blocked)
+- B[(0,1), (0,1), (1,1), 3] = 1.0 (stays in place)
+
+This prevents:
+- Direct collisions
+- Edge swaps (ghosting through each other)
+
+### **Theory of Mind with Proper Conditioning**
+
+The empathy bug has been fixed. Previously:
+```python
+# OLD (buggy): G_j constant for all of i's actions
+G_j = compute_other_agent_G(qs_j, B_j, C_j, policies_j)
+G_social[k] = G_i[k] + α * G_j[k]  # G_j doesn't depend on k!
+```
+
+Now (correct):
+```python
+# NEW: G_j conditioned on i's predicted next position
+for each action k:
+    qs_i_next = B_i[:, :, s_j, k] @ qs_i * qs_j[s_j]
+    G_j_all = compute_other_agent_G(qs_j, B_j, C_j, policies_j, qs_i=qs_i_next)
+    G_j_best[k] = min(G_j_all)  # j's best response
+    G_social[k] = G_i[k] + α * G_j_best[k]
+```
+
+Now empathy actually affects policy selection by predicting how i's actions impact j.
+
+### **Multi-Step Planning for Complex Scenarios**
+
+With horizon H > 1, agents can plan sequences like:
+- **Bottleneck detour**: "UP → RIGHT × 3 → DOWN" (requires H ≥ 4)
+- **Crossed goals**: "DOWN → RIGHT × 5 → UP" (requires H ≥ 3)
+- **Turn-taking**: "STAY × 2 → RIGHT × 3" (wait for other, then proceed)
+
+Recommended horizons by scenario:
+- Wide corridor: H = 1 (no obstacles)
+- Crossed goals: H = 2-3 (coordinate crossing)
+- Bottleneck: H = 3-4 (multi-step detour)
 
 ---
 

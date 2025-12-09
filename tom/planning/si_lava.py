@@ -13,7 +13,12 @@ from dataclasses import dataclass
 from tom.models import LavaAgent
 
 
-def propagate_state(qs0: np.ndarray, B: np.ndarray, actions: np.ndarray) -> np.ndarray:
+def propagate_state(
+    qs0: np.ndarray,
+    B: np.ndarray,
+    actions: np.ndarray,
+    qs_other: Optional[np.ndarray] = None
+) -> np.ndarray:
     """
     Propagate belief state forward under a sequence of actions.
 
@@ -22,9 +27,13 @@ def propagate_state(qs0: np.ndarray, B: np.ndarray, actions: np.ndarray) -> np.n
     qs0 : np.ndarray
         Initial belief state (num_states,)
     B : np.ndarray
-        Transition model (num_states, num_states, num_actions)
+        Transition model. Can be 3D (num_states, num_states, num_actions) for
+        single-agent, or 4D (num_states, num_states, num_states, num_actions)
+        for multi-agent conditioning on other's position.
     actions : np.ndarray
         Sequence of actions (horizon,)
+    qs_other : np.ndarray, optional
+        Belief about other agent's position (num_states,). Required if B is 4D.
 
     Returns
     -------
@@ -32,8 +41,28 @@ def propagate_state(qs0: np.ndarray, B: np.ndarray, actions: np.ndarray) -> np.n
         Final belief state after applying all actions (num_states,)
     """
     qs = qs0.copy()
-    for action in actions:
-        qs = B[:, :, action] @ qs
+
+    # Check if B is 3D (single-agent) or 4D (multi-agent)
+    if B.ndim == 3:
+        # Single-agent: B[s', s, a]
+        for action in actions:
+            qs = B[:, :, action] @ qs
+    elif B.ndim == 4:
+        # Multi-agent: B[s', s, s_other, a]
+        # Need to marginalize over other agent's position
+        if qs_other is None:
+            raise ValueError("qs_other required for 4D B matrix")
+
+        for action in actions:
+            # qs_next[s'] = sum_{s, s_other} B[s', s, s_other, a] * qs[s] * qs_other[s_other]
+            # Compute as: qs_next = sum_{s_other} (B[:, :, s_other, action] @ qs) * qs_other[s_other]
+            qs_next = np.zeros_like(qs)
+            for s_other in range(len(qs_other)):
+                qs_next += B[:, :, s_other, action] @ qs * qs_other[s_other]
+            qs = qs_next
+    else:
+        raise ValueError(f"B must be 3D or 4D, got shape {B.shape}")
+
     return qs
 
 
@@ -43,6 +72,7 @@ def compute_risk_G(
     C: np.ndarray,
     policies: np.ndarray,
     A: Optional[np.ndarray] = None,
+    qs_other: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
     Compute risk-based Expected Free Energy for each policy.
@@ -55,13 +85,15 @@ def compute_risk_G(
     qs : np.ndarray
         Current belief state (num_states,)
     B : np.ndarray
-        Transition model (num_states, num_states, num_actions)
+        Transition model. Can be 3D or 4D (if conditioning on other agent).
     C : np.ndarray
         Preference vector over observations (num_obs,)
     policies : np.ndarray
         Policy set (num_policies, horizon, num_state_factors)
     A : np.ndarray, optional
         Observation model (num_obs, num_states). If None, assumes identity.
+    qs_other : np.ndarray, optional
+        Belief about other agent's position. Required if B is 4D.
 
     Returns
     -------
@@ -88,8 +120,19 @@ def compute_risk_G(
         expected_utility = 0.0
 
         for action in action_seq:
-            # Predict next state
-            qs_t = B[:, :, action] @ qs_t
+            # Predict next state (handles both 3D and 4D B)
+            if B.ndim == 3:
+                qs_t = B[:, :, action] @ qs_t
+            elif B.ndim == 4:
+                if qs_other is None:
+                    raise ValueError("qs_other required for 4D B matrix")
+                # Marginalize over other agent's position
+                qs_t_next = np.zeros_like(qs_t)
+                for s_other in range(len(qs_other)):
+                    qs_t_next += B[:, :, s_other, action] @ qs_t * qs_other[s_other]
+                qs_t = qs_t_next
+            else:
+                raise ValueError(f"B must be 3D or 4D, got shape {B.shape}")
 
             # Predict observations
             obs_dist = A @ qs_t  # p(o|qs_t)
