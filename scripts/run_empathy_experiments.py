@@ -527,15 +527,8 @@ def main():
             planner_i = EmpathicLavaPlanner(agent_i, agent_j, alpha=alpha_i)
             planner_j = EmpathicLavaPlanner(agent_j, agent_i, alpha=alpha_j)
 
-            # Enable verbose for specific tests to debug empathy
-            verbose_debug = (
-                
-                    (layout_name == "bottleneck")
-                    or (layout_name == "crossed_goals" and alpha_i != alpha_j)
-                    or (layout_name == "wide" and alpha_i == 0.5 and alpha_j == 0.5)
-                
-
-            )
+            # Enable verbose for ALL episodes to see full trace
+            verbose_debug = True
 
             # Run episode
             result = run_episode(

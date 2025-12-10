@@ -215,10 +215,16 @@ class LavaModel:
         # Preferences over own location
         C_self = np.zeros(self.num_obs)
 
-        # Distance-based shaping weight
-        lambda_dist = 0.5  # Reward proximity to goal
+        # GOAL REWARD: Strong preference for reaching exact goal
+        goal_reward = 50.0  # Much stronger than original 10.0
+
+        # Distance-based shaping: guides agent towards goal when unreachable within horizon
+        # This is CRITICAL - without it, agents can't find the goal if it's >horizon steps away
+        lambda_dist = 2.0  # Restored (was 0.5, increased to 2.0 for stronger gradient)
+
         # Time cost (small penalty per timestep for not being at goal)
         time_cost = 0.1
+
         # Lava penalty
         lava_penalty = -100.0
 
@@ -231,10 +237,13 @@ class LavaModel:
                 # Lava: catastrophic
                 C_self[s] = lava_penalty
             elif x == self.goal_x and y == self.goal_y:
-                # Goal: high preference (no time cost)
-                C_self[s] = 10.0
+                # Goal: STRONG preference (no time cost, no distance shaping)
+                # This is the ONLY cell with large positive reward
+                C_self[s] = goal_reward
             else:
-                # Safe corridor: small shaping based on distance to goal + time cost
+                # Safe corridor: distance shaping + time cost
+                # Distance shaping creates gradient towards goal (essential when goal > horizon steps away)
+                # The gradient is lane-neutral - only Manhattan distance to goal matters
                 manhattan_dist = abs(x - self.goal_x) + abs(y - self.goal_y)
                 C_self[s] = -lambda_dist * manhattan_dist - time_cost
 
@@ -245,9 +254,9 @@ class LavaModel:
 
         # Preferences over relational state
         C_relation = np.zeros(3)
-        C_relation[0] = 0.0    # Different rows: neutral
-        C_relation[1] = -1.0   # Same row, different cells: mild penalty
-        C_relation[2] = -100.0  # Same cell (collision): catastrophic
+        C_relation[0] = 0.0    # Different rows: neutral (no lane bias)
+        C_relation[1] = 0.0    # Same row, different cells: NEUTRAL (removed lane bias)
+        C_relation[2] = -100.0  # Same cell (collision): catastrophic - ONLY this matters
 
         return {
             "location_obs": jnp.array(C_self),
