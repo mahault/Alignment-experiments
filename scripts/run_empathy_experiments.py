@@ -487,7 +487,7 @@ def main():
         # The policy set contains one policy per primitive action (5 policies total)
         # Multi-step planning is handled by replanning after each action
         # This matches the approach used in the TOM collision avoidance examples
-        horizon = 1
+        horizon = 3
 
         print(f"  Width: {layout_info['width']}, Height: {layout_info['height']}")
         print(f"  Planning horizon: {horizon} (rolling horizon - replan each step)")
@@ -529,9 +529,12 @@ def main():
 
             # Enable verbose for specific tests to debug empathy
             verbose_debug = (
-                (layout_name == "crossed_goals" and alpha_i != alpha_j)  # Asymmetric crossed
-                or (layout_name == "bottleneck" and alpha_i != alpha_j)  # Asymmetric bottleneck
-                or (layout_name == "wide" and alpha_i == 0.5 and alpha_j == 0.5)  # Baseline check
+                
+                    (layout_name == "bottleneck")
+                    or (layout_name == "crossed_goals" and alpha_i != alpha_j)
+                    or (layout_name == "wide" and alpha_i == 0.5 and alpha_j == 0.5)
+                
+
             )
 
             # Run episode
