@@ -97,6 +97,16 @@ def main():
     if not run("F-Aware Prior", "pytest tests/test_F_aware_prior.py -v", stop_on_failure=False):
         failures.append("test_F_aware_prior.py")
 
+    # 7. JAX Correctness Tests (Path Flexibility)
+    print(f"\n{YELLOW}STEP 7: Testing JAX path flexibility correctness...{RESET}")
+    if not run("JAX Path Flexibility", "pytest tests/test_jax_correctness.py -v", stop_on_failure=False):
+        failures.append("test_jax_correctness.py")
+
+    # 8. JAX Empathy Tests
+    print(f"\n{YELLOW}STEP 8: Testing JAX empathy rollout correctness...{RESET}")
+    if not run("JAX Empathy Rollout", "pytest tests/test_jax_empathy.py -v", stop_on_failure=False):
+        failures.append("test_jax_empathy.py")
+
     # Summary
     print("\n" + "="*80)
     print(f"{CYAN}                            SUMMARY{RESET}")
