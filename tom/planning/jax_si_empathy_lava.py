@@ -411,8 +411,9 @@ def rollout_one_policy_jax(
 # Vectorized version over all i policies
 rollout_all_policies_jax = jax.jit(vmap(
     rollout_one_policy_jax,
-    in_axes=(0, None, None, None, None, None, None, None, None, None, None, None, None, None)
+    in_axes=(0, None, None, None, None, None, None, None, None, None, None, None, None)
     # vmap over policies (axis 0), everything else broadcasted
+    # Note: eps parameter uses default value, so not included in in_axes
 ))
 
 
