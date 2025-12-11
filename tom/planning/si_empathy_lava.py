@@ -176,8 +176,10 @@ def _epistemic_info_gain(
 
 
 def _expected_pragmatic_utility(
-    qs_self: np.ndarray,
-    qs_other: np.ndarray,
+    qs_self_current: np.ndarray,
+    qs_other_current: np.ndarray,
+    qs_self_next: np.ndarray,
+    qs_other_next: np.ndarray,
     action_self: int,
     action_other: int,
     A_loc: np.ndarray,
@@ -196,17 +198,24 @@ def _expected_pragmatic_utility(
     where we sum expected utility over all modalities.
 
     Modalities:
-    1. location_obs: E[C_loc(o)] = (A_loc @ qs_self) · C_loc
-    2. edge_obs: E[C_edge(e)] = (A_edge[:,:,action_self] @ qs_self) · C_edge
-    3. cell_collision_obs: Marginalize A over joint beliefs
-    4. edge_collision_obs: Marginalize A over joint beliefs and actions
+    1. location_obs: E[C_loc(o)] = (A_loc @ qs_self_next) · C_loc
+    2. edge_obs: E[C_edge(e)] = (A_edge[:,:,action_self] @ qs_self_next) · C_edge
+    3. cell_collision_obs: Marginalize A over joint NEXT state beliefs
+    4. edge_collision_obs: Marginalize A over joint CURRENT state beliefs + actions
+
+    NOTE: Edge collision depends on CURRENT states + actions (which edges are traversed),
+    while cell collision depends on NEXT states (where agents end up).
 
     Parameters
     ----------
-    qs_self : (num_states,)
-        Belief over own position
-    qs_other : (num_states,)
-        Belief over other's position
+    qs_self_current : (num_states,)
+        Belief over own CURRENT position
+    qs_other_current : (num_states,)
+        Belief over other's CURRENT position
+    qs_self_next : (num_states,)
+        Belief over own NEXT position
+    qs_other_next : (num_states,)
+        Belief over other's NEXT position
     action_self : int
         Own action
     action_other : int
@@ -233,25 +242,25 @@ def _expected_pragmatic_utility(
     total_pragmatic : float
         Sum of expected utilities over all modalities
     """
-    # 1. Location utility: E[C_loc(o)]
-    obs_dist = A_loc @ qs_self
+    # 1. Location utility: E[C_loc(o)] - uses NEXT state
+    obs_dist = A_loc @ qs_self_next
     location_utility = float((obs_dist * C_loc).sum())
 
-    # 2. Edge utility: E[C_edge(e)]
-    edge_dist = A_edge[:, :, action_self] @ qs_self
+    # 2. Edge utility: E[C_edge(e)] - uses NEXT state
+    edge_dist = A_edge[:, :, action_self] @ qs_self_next
     edge_utility = float((edge_dist * C_edge).sum())
 
-    # 3. Cell collision utility: E[C_cell_collision(o)]
-    # p(o | qs_self, qs_other) = Σ_{s_i, s_j} A[o, s_i, s_j] * qs_self[s_i] * qs_other[s_j]
+    # 3. Cell collision utility: E[C_cell_collision(o)] - uses NEXT states
+    # p(o | qs_self_next, qs_other_next) = Σ_{s_i, s_j} A[o, s_i, s_j] * qs_self_next[s_i] * qs_other_next[s_j]
     # Using einsum for efficient marginalization
-    cell_obs_dist = np.einsum('oij,i,j->o', A_cell_collision, qs_self, qs_other)
+    cell_obs_dist = np.einsum('oij,i,j->o', A_cell_collision, qs_self_next, qs_other_next)
     cell_collision_utility = float((cell_obs_dist * C_cell_collision).sum())
 
-    # 4. Edge collision utility: E[C_edge_collision(o)]
-    # p(o | qs_self, qs_other, a_self, a_other) = Σ_{s_i, s_j} A[o, s_i, s_j, a_self, a_other] * qs_self[s_i] * qs_other[s_j]
+    # 4. Edge collision utility: E[C_edge_collision(o)] - uses CURRENT states + actions
+    # p(o | qs_self_current, qs_other_current, a_self, a_other) = Σ_{s_i, s_j} A[o, s_i, s_j, a_self, a_other] * qs_self_current[s_i] * qs_other_current[s_j]
     # Extract the slice for the specific actions
     A_edge_coll_slice = A_edge_collision[:, :, :, action_self, action_other]
-    edge_coll_obs_dist = np.einsum('oij,i,j->o', A_edge_coll_slice, qs_self, qs_other)
+    edge_coll_obs_dist = np.einsum('oij,i,j->o', A_edge_coll_slice, qs_self_current, qs_other_current)
     edge_collision_utility = float((edge_coll_obs_dist * C_edge_collision).sum())
 
     # Total pragmatic utility (sum over all modalities)
@@ -386,8 +395,10 @@ def compute_empathic_G(
             # Edge collision requires knowing BOTH agents' actions simultaneously
             # So we pass a dummy action and zero out the edge collision preferences
             pragmatic_i = _expected_pragmatic_utility(
-                qs_self=qs_i_next,
-                qs_other=qs_j_t,
+                qs_self_current=qs_i_t,
+                qs_other_current=qs_j_t,
+                qs_self_next=qs_i_next,
+                qs_other_next=qs_j_t,  # j hasn't moved yet, so next = current
                 action_self=a_i_t,
                 action_other=4,  # Dummy action (STAY) since we don't know j's action
                 A_loc=A_i_loc,
@@ -420,11 +431,15 @@ def compute_empathic_G(
 
                 # Pragmatic utility for j (includes ALL modalities including edge collision)
                 # Now we know both actions (i's committed a_i_t and j's candidate a_j)
+                # CRITICAL: Use CURRENT states for edge collision (where agents ARE + actions)
+                #           Use NEXT states for cell collision (where agents END UP)
                 pragmatic_j = _expected_pragmatic_utility(
-                    qs_self=qs_j_pred,
-                    qs_other=qs_i_next,
+                    qs_self_current=qs_j_t,      # j's CURRENT state for edge collision
+                    qs_other_current=qs_i_t,     # i's CURRENT state for edge collision (before i moved)
+                    qs_self_next=qs_j_pred,      # j's NEXT state for location/cell collision
+                    qs_other_next=qs_i_next,     # i's NEXT state for cell collision
                     action_self=a_j,
-                    action_other=a_i_t,  # We know i's committed action
+                    action_other=a_i_t,          # We know i's committed action
                     A_loc=A_j_loc,
                     C_loc=C_j_loc,
                     A_edge=A_j_edge,

@@ -77,8 +77,10 @@ def propagate_belief_jax(
 
 @jax.jit
 def expected_pragmatic_utility_jax(
-    qs_self: jnp.ndarray,
-    qs_other: jnp.ndarray,
+    qs_self_current: jnp.ndarray,
+    qs_other_current: jnp.ndarray,
+    qs_self_next: jnp.ndarray,
+    qs_other_next: jnp.ndarray,
     action_self: int,
     action_other: int,
     A_loc: jnp.ndarray,
@@ -94,17 +96,24 @@ def expected_pragmatic_utility_jax(
     JAX-compiled pragmatic utility over ALL observation modalities.
 
     Modalities:
-    1. location_obs: E[C_loc(o)]
-    2. edge_obs: E[C_edge(e)]
-    3. cell_collision_obs: Marginalize A over joint beliefs
-    4. edge_collision_obs: Marginalize A over joint beliefs and actions
+    1. location_obs: E[C_loc(o)] - uses NEXT state
+    2. edge_obs: E[C_edge(e)] - uses NEXT state
+    3. cell_collision_obs: Marginalize A over joint NEXT state beliefs
+    4. edge_collision_obs: Marginalize A over joint CURRENT state beliefs + actions
+
+    NOTE: Edge collision depends on CURRENT states + actions (which edges are traversed),
+    while cell collision depends on NEXT states (where agents end up).
 
     Parameters
     ----------
-    qs_self : jnp.ndarray
-        Belief over own position [num_states]
-    qs_other : jnp.ndarray
-        Belief over other's position [num_states]
+    qs_self_current : jnp.ndarray
+        Belief over own CURRENT position [num_states]
+    qs_other_current : jnp.ndarray
+        Belief over other's CURRENT position [num_states]
+    qs_self_next : jnp.ndarray
+        Belief over own NEXT position [num_states]
+    qs_other_next : jnp.ndarray
+        Belief over other's NEXT position [num_states]
     action_self : int
         Own action
     action_other : int
@@ -131,22 +140,23 @@ def expected_pragmatic_utility_jax(
     total_pragmatic : float
         Expected utility
     """
-    # 1. Location utility
-    obs_dist = A_loc @ qs_self
+    # 1. Location utility - uses NEXT state
+    obs_dist = A_loc @ qs_self_next
     location_utility = (obs_dist * C_loc).sum()
 
-    # 2. Edge utility
-    edge_dist = A_edge[:, :, action_self] @ qs_self
+    # 2. Edge utility - uses NEXT state
+    edge_dist = A_edge[:, :, action_self] @ qs_self_next
     edge_utility = (edge_dist * C_edge).sum()
 
-    # 3. Cell collision utility: marginalize over joint states
-    # p(o | qs_self, qs_other) = Σ_{s_i, s_j} A[o, s_i, s_j] * qs_self[s_i] * qs_other[s_j]
-    cell_obs_dist = jnp.einsum('oij,i,j->o', A_cell_collision, qs_self, qs_other)
+    # 3. Cell collision utility - uses NEXT states
+    # p(o | qs_self_next, qs_other_next) = Σ_{s_i, s_j} A[o, s_i, s_j] * qs_self_next[s_i] * qs_other_next[s_j]
+    cell_obs_dist = jnp.einsum('oij,i,j->o', A_cell_collision, qs_self_next, qs_other_next)
     cell_collision_utility = (cell_obs_dist * C_cell_collision).sum()
 
-    # 4. Edge collision utility: marginalize over joint states and actions
+    # 4. Edge collision utility - uses CURRENT states + actions
+    # p(o | qs_self_current, qs_other_current, a_self, a_other) = Σ_{s_i, s_j} A[o, s_i, s_j, a_self, a_other] * qs_self_current[s_i] * qs_other_current[s_j]
     A_edge_coll_slice = A_edge_collision[:, :, :, action_self, action_other]
-    edge_coll_obs_dist = jnp.einsum('oij,i,j->o', A_edge_coll_slice, qs_self, qs_other)
+    edge_coll_obs_dist = jnp.einsum('oij,i,j->o', A_edge_coll_slice, qs_self_current, qs_other_current)
     edge_collision_utility = (edge_coll_obs_dist * C_edge_collision).sum()
 
     # Total pragmatic utility
@@ -213,6 +223,7 @@ def epistemic_info_gain_jax(
 @jax.jit
 def compute_j_best_response_jax(
     qs_j: jnp.ndarray,
+    qs_i: jnp.ndarray,
     qs_i_next: jnp.ndarray,
     action_i: int,
     B_j: jnp.ndarray,
@@ -242,6 +253,8 @@ def compute_j_best_response_jax(
     ----------
     qs_j : jnp.ndarray
         j's current belief [num_states]
+    qs_i : jnp.ndarray
+        i's current belief (before i moved) [num_states]
     qs_i_next : jnp.ndarray
         i's predicted next belief [num_states]
     action_i : int
@@ -273,9 +286,12 @@ def compute_j_best_response_jax(
         qs_j_pred = propagate_belief_jax(qs_j, B_j, action_j, qs_other=qs_i_next, eps=eps)
 
         # Pragmatic utility (all modalities including edge collision)
+        # CRITICAL: Use CURRENT states for edge collision, NEXT states for cell collision
         pragmatic = expected_pragmatic_utility_jax(
-            qs_self=qs_j_pred,
-            qs_other=qs_i_next,
+            qs_self_current=qs_j,         # j's CURRENT state for edge collision
+            qs_other_current=qs_i,        # i's CURRENT state (before i moved) for edge collision
+            qs_self_next=qs_j_pred,       # j's NEXT state for location/cell collision
+            qs_other_next=qs_i_next,      # i's NEXT state for cell collision
             action_self=action_j,
             action_other=action_i,
             A_loc=A_j_loc,
@@ -417,8 +433,10 @@ def rollout_one_policy_jax(
         # --- i's EFE components ---
         # Note: Zero out edge collision for i (we don't know j's action yet)
         pragmatic_i = expected_pragmatic_utility_jax(
-            qs_self=qs_i_next,
-            qs_other=qs_j,
+            qs_self_current=qs_i,
+            qs_other_current=qs_j,
+            qs_self_next=qs_i_next,
+            qs_other_next=qs_j,  # j hasn't moved yet, so next = current
             action_self=action_i,
             action_other=4,  # Dummy action (STAY)
             A_loc=A_i_loc,
@@ -436,7 +454,7 @@ def rollout_one_policy_jax(
 
         # --- j best-responds (vectorized over all j actions!) ---
         G_j_best, best_action_j = compute_j_best_response_jax(
-            qs_j, qs_i_next, action_i,
+            qs_j, qs_i, qs_i_next, action_i,
             B_j, A_j_loc, C_j_loc, A_j_edge, C_j_edge,
             A_j_cell_collision, C_j_cell_collision,
             A_j_edge_collision, C_j_edge_collision,
