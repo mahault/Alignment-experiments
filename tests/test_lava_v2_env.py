@@ -38,7 +38,7 @@ class TestLayoutCreation:
 
         print(f"\nNarrow layout:")
         print(f"  Dimensions: {layout.width}x{layout.height}")
-        print(f"  Goal: {layout.goal_pos}")
+        print(f"  Goals: {layout.goal_positions}")
         print(f"  Start positions: {layout.start_positions}")
 
     def test_wide_layout(self):
@@ -208,26 +208,28 @@ class TestCollisionDetection:
 
         # If agents can reach same position by both moving RIGHT
         # This depends on layout, so let's just test the collision detection logic directly
-        test_positions = {0: (2, 1), 1: (2, 1)}  # Same position
-        collision = env._check_collision(test_positions)
+        current_positions = {0: (1, 1), 1: (3, 1)}  # Different positions
+        next_positions = {0: (2, 1), 1: (2, 1)}  # Same position after move
+        collision = env._check_collision(current_positions, next_positions)
 
         assert collision, "Should detect collision when agents at same position"
 
         print(f"\nCollision detection:")
-        print(f"  Positions: {test_positions}")
+        print(f"  Next positions: {next_positions}")
         print(f"  Collision detected: {collision}")
 
     def test_no_collision_different_positions(self):
         """Test that no collision when agents at different positions."""
         env = LavaV2Env(layout_name="wide", width=6, num_agents=2, timesteps=20)
 
-        test_positions = {0: (2, 1), 1: (3, 1)}  # Different positions
-        collision = env._check_collision(test_positions)
+        current_positions = {0: (1, 1), 1: (4, 1)}  # Different positions
+        next_positions = {0: (2, 1), 1: (3, 1)}  # Different positions
+        collision = env._check_collision(current_positions, next_positions)
 
         assert not collision, "Should not detect collision when agents at different positions"
 
         print(f"\nNo collision:")
-        print(f"  Positions: {test_positions}")
+        print(f"  Positions: {next_positions}")
         print(f"  Collision detected: {collision}")
 
 
@@ -238,12 +240,14 @@ class TestGoalReaching:
         """Test that goal reaching is detected correctly."""
         env = LavaV2Env(layout_name="wide", width=6, num_agents=2, timesteps=20)
 
-        goal_pos = env.layout.goal_pos
+        # Each agent has its own goal in goal_positions list
+        goal_pos_0 = env.layout.goal_positions[0]
+        goal_pos_1 = env.layout.goal_positions[1]
 
-        # Create state with agent at goal
+        # Create state with agent 0 at its goal
         state = {
             "env_state": {
-                "pos": {0: goal_pos, 1: (0, 1)},
+                "pos": {0: goal_pos_0, 1: (0, 1)},
                 "timestep": 0,
             },
             "timestep": 0,
@@ -257,7 +261,8 @@ class TestGoalReaching:
         assert not info["goal_reached"][1], "Agent 1 should not have reached goal"
 
         print(f"\nGoal detection:")
-        print(f"  Goal position: {goal_pos}")
+        print(f"  Agent 0 goal: {goal_pos_0}")
+        print(f"  Agent 1 goal: {goal_pos_1}")
         print(f"  Agent 0 reached goal: {info['goal_reached'][0]}")
         print(f"  Agent 1 reached goal: {info['goal_reached'][1]}")
 

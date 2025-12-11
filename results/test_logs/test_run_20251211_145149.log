@@ -1,0 +1,133 @@
+
+Test run started: 2025-12-11 14:51:49
+Log file: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\results\test_logs\test_run_20251211_145149.log
+
+
+================================================================================
+          RUNNING FULL TEST SUITE
+================================================================================
+
+STEP 1: TOM Infrastructure Smoke Test...
+
+================================================================================
+TOM Smoke Test
+================================================================================
+
+================================================================================
+                    TOM LAVA CORRIDOR SMOKE TEST
+================================================================================
+
+
+================================================================================
+                              SUMMARY
+================================================================================
+
+2025-12-11 14:51:49,692 - __main__ - INFO - ================================================================================
+2025-12-11 14:51:49,693 - __main__ - INFO - STEP 1: Testing TOM imports...
+2025-12-11 14:51:49,693 - __main__ - INFO - ================================================================================
+2025-12-11 14:51:49,700 - __main__ - INFO -   \u2713 TOM model imports
+2025-12-11 14:51:49,700 - __main__ - INFO -   \u2713 TOM env imports
+2025-12-11 14:51:49,930 - __main__ - INFO -   \u2713 TOM planning imports
+2025-12-11 14:51:49,930 - __main__ - INFO - 
+\u2705 All TOM imports successful!
+
+2025-12-11 14:51:49,930 - __main__ - INFO - ================================================================================
+2025-12-11 14:51:49,930 - __main__ - INFO - STEP 2: Testing TOM model creation...
+2025-12-11 14:51:49,930 - __main__ - INFO - ================================================================================
+INFO:2025-12-11 14:51:49,945:jax._src.xla_bridge:927: Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+2025-12-11 14:51:49,945 - jax._src.xla_bridge - INFO - Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+INFO:2025-12-11 14:51:49,948:jax._src.xla_bridge:927: Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
+2025-12-11 14:51:49,948 - jax._src.xla_bridge - INFO - Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
+2025-12-11 14:51:50,127 - __main__ - INFO -   \u2713 LavaModel created
+2025-12-11 14:51:50,127 - __main__ - INFO -     A keys: ['location_obs', 'edge_obs', 'cell_collision_obs', 'edge_collision_obs']
+2025-12-11 14:51:50,127 - __main__ - INFO -     B keys: ['location_state']
+2025-12-11 14:51:50,127 - __main__ - INFO -     C keys: ['location_obs', 'edge_obs', 'cell_collision_obs', 'edge_collision_obs']
+2025-12-11 14:51:50,127 - __main__ - INFO -     D keys: ['location_state']
+2025-12-11 14:51:50,192 - __main__ - INFO -   \u2713 LavaAgent created
+2025-12-11 14:51:50,192 - __main__ - INFO -     Num policies: 5
+2025-12-11 14:51:50,193 - __main__ - INFO -     Policy shape: (5, 1, 1)
+2025-12-11 14:51:50,193 - __main__ - INFO -     A shape: (12, 12)
+2025-12-11 14:51:50,193 - __main__ - INFO -     B shape: (12, 12, 12, 5)
+2025-12-11 14:51:50,193 - __main__ - INFO -     C shape: (12,)
+2025-12-11 14:51:50,193 - __main__ - INFO -     D shape: (12,)
+2025-12-11 14:51:50,193 - __main__ - INFO - 
+\u2705 TOM model creation successful!
+
+2025-12-11 14:51:50,193 - __main__ - INFO - ================================================================================
+2025-12-11 14:51:50,193 - __main__ - INFO - STEP 3: Testing TOM environment interaction...
+2025-12-11 14:51:50,193 - __main__ - INFO - ================================================================================
+2025-12-11 14:51:50,193 - src.envs.lava_corridor - INFO - LavaCorridorConfig: width=4, num_agents=2, slip_prob=0.0
+2025-12-11 14:51:50,193 - src.envs.lava_corridor - INFO -   Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 14:51:50,193 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 14:51:50,193 - src.envs.lava_corridor - INFO - Lava Corridor Environment Initialized
+2025-12-11 14:51:50,193 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 14:51:50,193 - src.envs.lava_corridor - INFO - Grid: 4x3 (width x height)
+2025-12-11 14:51:50,193 - src.envs.lava_corridor - INFO - Safe row: y=1
+2025-12-11 14:51:50,193 - src.envs.lava_corridor - INFO - Goal: x=3, y=1
+2025-12-11 14:51:50,194 - src.envs.lava_corridor - INFO - Num agents: 2
+2025-12-11 14:51:50,194 - src.envs.lava_corridor - INFO - Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 14:51:50,194 - src.envs.lava_corridor - INFO - Slip probability: 0.0
+2025-12-11 14:51:50,194 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 14:51:50,194 - __main__ - INFO -   \u2713 LavaV1Env created
+2025-12-11 14:51:50,194 - __main__ - INFO -     Grid: 4x3
+2025-12-11 14:51:50,194 - __main__ - INFO -     Num agents: 2
+2025-12-11 14:51:50,208 - src.envs.lava_corridor - INFO - Resetting environment
+2025-12-11 14:51:50,208 - src.envs.lava_corridor - INFO - Reset complete: t=0
+2025-12-11 14:51:50,208 - src.envs.lava_corridor - INFO -   Agent 0: position=(0, 1), obs_idx=4
+2025-12-11 14:51:50,208 - src.envs.lava_corridor - INFO -   Agent 1: position=(0, 1), obs_idx=4
+2025-12-11 14:51:50,215 - __main__ - INFO -   \u2713 Environment reset
+2025-12-11 14:51:50,215 - __main__ - INFO -     State keys: ['env_state', 'timestep', 'done']
+2025-12-11 14:51:50,215 - __main__ - INFO -     Obs keys: [0, 1]
+2025-12-11 14:51:50,216 - __main__ - INFO -     Agent 0 obs: {'location_obs': Array([4], dtype=int32)}
+2025-12-11 14:51:50,216 - __main__ - INFO -     Agent 1 obs: {'location_obs': Array([4], dtype=int32)}
+2025-12-11 14:51:50,216 - src.envs.lava_corridor - WARNING -   COLLISION: Both agents at (1, 1)!
+2025-12-11 14:51:50,216 - __main__ - INFO -   \u2713 Environment step
+2025-12-11 14:51:50,216 - __main__ - INFO -     Done: False
+2025-12-11 14:51:50,216 - __main__ - INFO -     Timestep: 1
+2025-12-11 14:51:50,216 - __main__ - INFO - 
+\u2705 TOM environment interaction successful!
+
+2025-12-11 14:51:50,216 - __main__ - INFO - ================================================================================
+2025-12-11 14:51:50,216 - __main__ - INFO - STEP 4: Testing TOM agent inference...
+2025-12-11 14:51:50,216 - __main__ - INFO - ================================================================================
+2025-12-11 14:51:50,222 - src.envs.lava_corridor - INFO - LavaCorridorConfig: width=4, num_agents=1, slip_prob=0.0
+2025-12-11 14:51:50,222 - src.envs.lava_corridor - INFO -   Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 14:51:50,222 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 14:51:50,222 - src.envs.lava_corridor - INFO - Lava Corridor Environment Initialized
+2025-12-11 14:51:50,222 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 14:51:50,222 - src.envs.lava_corridor - INFO - Grid: 4x3 (width x height)
+2025-12-11 14:51:50,222 - src.envs.lava_corridor - INFO - Safe row: y=1
+2025-12-11 14:51:50,222 - src.envs.lava_corridor - INFO - Goal: x=3, y=1
+2025-12-11 14:51:50,222 - src.envs.lava_corridor - INFO - Num agents: 1
+2025-12-11 14:51:50,222 - src.envs.lava_corridor - INFO - Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 14:51:50,223 - src.envs.lava_corridor - INFO - Slip probability: 0.0
+2025-12-11 14:51:50,223 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 14:51:50,223 - src.envs.lava_corridor - INFO - Resetting environment
+2025-12-11 14:51:50,223 - src.envs.lava_corridor - INFO - Reset complete: t=0
+2025-12-11 14:51:50,223 - src.envs.lava_corridor - INFO -   Agent 0: position=(0, 1), obs_idx=4
+2025-12-11 14:51:50,223 - __main__ - INFO -   Agent observation: 4
+2025-12-11 14:51:50,223 - __main__ - INFO -   \u2713 Manual Bayesian inference complete
+2025-12-11 14:51:50,223 - __main__ - INFO -     Posterior qs shape: (12,)
+2025-12-11 14:51:50,223 - __main__ - INFO -     Posterior qs sum: 1.0000
+2025-12-11 14:51:50,223 - __main__ - INFO -     Posterior qs min=0.0000, max=1.0000
+2025-12-11 14:51:50,223 - __main__ - INFO -     Most likely state: 4
+2025-12-11 14:51:50,223 - __main__ - INFO -     Confidence: 1.0000
+2025-12-11 14:51:50,223 - __main__ - INFO - 
+\u2705 TOM agent inference (manual Bayes) successful!
+
+Traceback (most recent call last):
+  File "C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\smoke_test_tom.py", line 242, in <module>
+    sys.exit(main())
+  File "C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\smoke_test_tom.py", line 223, in main
+    print(f"  {name:.<50} {status}")
+  File "C:\Users\mahau\anaconda3\envs\alignment\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2705' in position 53: character maps to <undefined>
+
+FAILED: TOM Smoke Test
+
+Stopping due to failure.
+Fix the error above before continuing.
+
+
+Log saved to: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\results\test_logs\test_run_20251211_145149.log

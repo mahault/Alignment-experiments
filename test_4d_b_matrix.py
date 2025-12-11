@@ -19,10 +19,10 @@ if ROOT not in sys.path:
 from tom.models import LavaModel, LavaAgent
 from tom.planning.si_empathy_lava import EmpathicLavaPlanner
 
-def test_b_matrix_blocking():
-    """Test that B matrix blocks moves into occupied cells."""
+def test_b_matrix_structure():
+    """Test that B matrix has correct 4D structure for multi-agent."""
     print("=" * 60)
-    print("TEST 1: B Matrix Collision Blocking")
+    print("TEST 1: B Matrix 4D Structure")
     print("=" * 60)
 
     # Create simple 4x3 grid
@@ -33,34 +33,32 @@ def test_b_matrix_blocking():
     print(f"Expected: (num_states, num_states, num_states, num_actions)")
     print(f"Got: ({model.num_states}, {model.num_states}, {model.num_states}, 5)")
 
-    # Test case: agent at (0,1), other at (1,1)
-    # Agent wants to move RIGHT (action 3) into other's cell
+    # Check shape
+    assert B.shape == (model.num_states, model.num_states, model.num_states, 5), \
+        f"B matrix should be 4D with shape ({model.num_states}, {model.num_states}, {model.num_states}, 5)"
+
+    # In Regime B, collisions are POSSIBLE (not blocked by physics)
+    # Collision avoidance is done via preferences, not transition dynamics
+    # So B[s_other, s_agent, s_other, action_right] CAN be > 0
+
     s_agent = 1 * model.width + 0  # (0, 1) -> index 4
     s_other = 1 * model.width + 1  # (1, 1) -> index 5
     action_right = 3
 
-    # Check transition probabilities
-    # Should stay at s_agent since target is occupied
     print(f"\nAgent at state {s_agent} (0,1), other at state {s_other} (1,1)")
     print(f"Agent tries RIGHT (action {action_right})")
-    print(f"Transition probabilities:")
-    for s_next in range(model.num_states):
-        prob = B[s_next, s_agent, s_other, action_right]
-        if prob > 0:
-            y_next = s_next // model.width
-            x_next = s_next % model.width
-            print(f"  State {s_next} ({x_next},{y_next}): {prob:.2f}")
 
-    # Should have probability 1.0 of staying at current position
-    stay_prob = B[s_agent, s_agent, s_other, action_right]
-    move_prob = B[s_other, s_agent, s_other, action_right]
+    # Movement should still work (Regime B allows collisions)
+    move_prob = float(B[s_other, s_agent, s_other, action_right])
+    print(f"Move to {s_other}: {move_prob:.2f}")
+    print(f"NOTE: In Regime B, collisions are possible (handled via preferences)")
 
-    print(f"\nStay at {s_agent}: {stay_prob:.2f} (should be 1.0)")
-    print(f"Move to {s_other}: {move_prob:.2f} (should be 0.0)")
+    # Check that columns sum to 1 (valid stochastic matrix)
+    for a in range(5):
+        col_sums = B[:, :, s_other, a].sum(axis=0)
+        assert np.allclose(col_sums, 1.0), f"B[:,:,{s_other},{a}] columns should sum to 1"
 
-    assert stay_prob == 1.0, "Should stay in place when target occupied"
-    assert move_prob == 0.0, "Should not move into occupied cell"
-    print("\n✓ PASS: B matrix correctly blocks occupied cells\n")
+    print("\n[PASS] B matrix has correct 4D structure\n")
 
 
 def test_empathy_conditioning():
@@ -106,7 +104,7 @@ def test_empathy_conditioning():
     for a in range(5):
         print(f"  {action_names[a]}: G_i={G_i[a]:.2f}, G_social={G_social[a]:.2f}")
 
-    print("\n✓ PASS: Empathy planner considers other agent's position\n")
+    print("\n[PASS] Empathy planner considers other agent's position\n")
 
 
 def test_multi_step_horizon():
@@ -157,9 +155,9 @@ def test_multi_step_horizon():
         action_names = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
         print(f"Chosen action: {action_names[action]}")
         print(f"Planning successful!")
-        print("\n✓ PASS: Multi-step horizon planning works\n")
+        print("\n[PASS] Multi-step horizon planning works\n")
     except Exception as e:
-        print(f"\n✗ FAIL: {e}\n")
+        print(f"\n[FAIL]: {e}\n")
         raise
 
 
@@ -169,12 +167,12 @@ def main():
     print("=" * 60 + "\n")
 
     try:
-        test_b_matrix_blocking()
+        test_b_matrix_structure()
         test_empathy_conditioning()
         test_multi_step_horizon()
 
         print("=" * 60)
-        print("ALL TESTS PASSED ✓")
+        print("ALL TESTS PASSED")
         print("=" * 60)
     except Exception as e:
         print("\n" + "=" * 60)

@@ -1,0 +1,1072 @@
+
+Test run started: 2025-12-11 16:03:59
+Log file: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\results\test_logs\test_run_20251211_160359.log
+
+
+================================================================================
+          RUNNING FULL TEST SUITE
+================================================================================
+
+STEP 1: TOM Infrastructure Smoke Test...
+
+================================================================================
+TOM Smoke Test
+================================================================================
+
+================================================================================
+                    TOM LAVA CORRIDOR SMOKE TEST
+================================================================================
+
+
+================================================================================
+                              SUMMARY
+================================================================================
+  TOM Imports....................................... [PASS]
+  TOM Model Creation................................ [PASS]
+  TOM Environment................................... [PASS]
+  TOM Agent Inference............................... [PASS]
+================================================================================
+
+ALL TOM TESTS PASSED! LavaCorridor TOM system is ready.
+
+Next steps:
+  1. Run multi-agent TOM rollout
+  2. Test ToMify for recursive inference
+  3. Run experiments with path flexibility metrics
+
+2025-12-11 16:04:00,421 - __main__ - INFO - ================================================================================
+2025-12-11 16:04:00,421 - __main__ - INFO - STEP 1: Testing TOM imports...
+2025-12-11 16:04:00,421 - __main__ - INFO - ================================================================================
+2025-12-11 16:04:00,429 - __main__ - INFO -   \u2713 TOM model imports
+2025-12-11 16:04:00,429 - __main__ - INFO -   \u2713 TOM env imports
+2025-12-11 16:04:00,895 - __main__ - INFO -   \u2713 TOM planning imports
+2025-12-11 16:04:00,895 - __main__ - INFO - 
+\u2705 All TOM imports successful!
+
+2025-12-11 16:04:00,895 - __main__ - INFO - ================================================================================
+2025-12-11 16:04:00,895 - __main__ - INFO - STEP 2: Testing TOM model creation...
+2025-12-11 16:04:00,895 - __main__ - INFO - ================================================================================
+INFO:2025-12-11 16:04:00,936:jax._src.xla_bridge:927: Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+2025-12-11 16:04:00,936 - jax._src.xla_bridge - INFO - Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+INFO:2025-12-11 16:04:00,936:jax._src.xla_bridge:927: Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
+2025-12-11 16:04:00,936 - jax._src.xla_bridge - INFO - Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
+2025-12-11 16:04:01,561 - __main__ - INFO -   \u2713 LavaModel created
+2025-12-11 16:04:01,561 - __main__ - INFO -     A keys: ['location_obs', 'edge_obs', 'cell_collision_obs', 'edge_collision_obs']
+2025-12-11 16:04:01,561 - __main__ - INFO -     B keys: ['location_state']
+2025-12-11 16:04:01,561 - __main__ - INFO -     C keys: ['location_obs', 'edge_obs', 'cell_collision_obs', 'edge_collision_obs']
+2025-12-11 16:04:01,561 - __main__ - INFO -     D keys: ['location_state']
+2025-12-11 16:04:01,666 - __main__ - INFO -   \u2713 LavaAgent created
+2025-12-11 16:04:01,666 - __main__ - INFO -     Num policies: 5
+2025-12-11 16:04:01,666 - __main__ - INFO -     Policy shape: (5, 1, 1)
+2025-12-11 16:04:01,666 - __main__ - INFO -     A shape: (12, 12)
+2025-12-11 16:04:01,666 - __main__ - INFO -     B shape: (12, 12, 12, 5)
+2025-12-11 16:04:01,666 - __main__ - INFO -     C shape: (12,)
+2025-12-11 16:04:01,666 - __main__ - INFO -     D shape: (12,)
+2025-12-11 16:04:01,666 - __main__ - INFO - 
+\u2705 TOM model creation successful!
+
+2025-12-11 16:04:01,666 - __main__ - INFO - ================================================================================
+2025-12-11 16:04:01,666 - __main__ - INFO - STEP 3: Testing TOM environment interaction...
+2025-12-11 16:04:01,666 - __main__ - INFO - ================================================================================
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - LavaCorridorConfig: width=4, num_agents=2, slip_prob=0.0
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO -   Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - Lava Corridor Environment Initialized
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - Grid: 4x3 (width x height)
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - Safe row: y=1
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - Goal: x=3, y=1
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - Num agents: 2
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - Slip probability: 0.0
+2025-12-11 16:04:01,666 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:04:01,666 - __main__ - INFO -   \u2713 LavaV1Env created
+2025-12-11 16:04:01,666 - __main__ - INFO -     Grid: 4x3
+2025-12-11 16:04:01,666 - __main__ - INFO -     Num agents: 2
+2025-12-11 16:04:01,686 - src.envs.lava_corridor - INFO - Resetting environment
+2025-12-11 16:04:01,686 - src.envs.lava_corridor - INFO - Reset complete: t=0
+2025-12-11 16:04:01,686 - src.envs.lava_corridor - INFO -   Agent 0: position=(0, 1), obs_idx=4
+2025-12-11 16:04:01,686 - src.envs.lava_corridor - INFO -   Agent 1: position=(0, 1), obs_idx=4
+2025-12-11 16:04:01,695 - __main__ - INFO -   \u2713 Environment reset
+2025-12-11 16:04:01,695 - __main__ - INFO -     State keys: ['env_state', 'timestep', 'done']
+2025-12-11 16:04:01,695 - __main__ - INFO -     Obs keys: [0, 1]
+2025-12-11 16:04:01,697 - __main__ - INFO -     Agent 0 obs: {'location_obs': Array([4], dtype=int32)}
+2025-12-11 16:04:01,697 - __main__ - INFO -     Agent 1 obs: {'location_obs': Array([4], dtype=int32)}
+2025-12-11 16:04:01,697 - src.envs.lava_corridor - WARNING -   COLLISION: Both agents at (1, 1)!
+2025-12-11 16:04:01,697 - __main__ - INFO -   \u2713 Environment step
+2025-12-11 16:04:01,697 - __main__ - INFO -     Done: False
+2025-12-11 16:04:01,697 - __main__ - INFO -     Timestep: 1
+2025-12-11 16:04:01,697 - __main__ - INFO - 
+\u2705 TOM environment interaction successful!
+
+2025-12-11 16:04:01,697 - __main__ - INFO - ================================================================================
+2025-12-11 16:04:01,697 - __main__ - INFO - STEP 4: Testing TOM agent inference...
+2025-12-11 16:04:01,697 - __main__ - INFO - ================================================================================
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - LavaCorridorConfig: width=4, num_agents=1, slip_prob=0.0
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO -   Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - Lava Corridor Environment Initialized
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - Grid: 4x3 (width x height)
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - Safe row: y=1
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - Goal: x=3, y=1
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - Num agents: 1
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - Slip probability: 0.0
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - Resetting environment
+2025-12-11 16:04:01,703 - src.envs.lava_corridor - INFO - Reset complete: t=0
+2025-12-11 16:04:01,704 - src.envs.lava_corridor - INFO -   Agent 0: position=(0, 1), obs_idx=4
+2025-12-11 16:04:01,704 - __main__ - INFO -   Agent observation: 4
+2025-12-11 16:04:01,704 - __main__ - INFO -   \u2713 Manual Bayesian inference complete
+2025-12-11 16:04:01,704 - __main__ - INFO -     Posterior qs shape: (12,)
+2025-12-11 16:04:01,704 - __main__ - INFO -     Posterior qs sum: 1.0000
+2025-12-11 16:04:01,704 - __main__ - INFO -     Posterior qs min=0.0000, max=1.0000
+2025-12-11 16:04:01,704 - __main__ - INFO -     Most likely state: 4
+2025-12-11 16:04:01,704 - __main__ - INFO -     Confidence: 1.0000
+2025-12-11 16:04:01,704 - __main__ - INFO - 
+\u2705 TOM agent inference (manual Bayes) successful!
+
+
+PASSED: TOM Smoke Test
+
+STEP 2: TOM Environment (LavaV1Env, LavaModel)...
+
+================================================================================
+TOM Environment
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 8 items
+
+tests/test_lava_env_tom.py::test_lava_model_creation PASSED              [ 12%]
+tests/test_lava_env_tom.py::test_lava_agent_creation PASSED              [ 25%]
+tests/test_lava_env_tom.py::test_lava_v1_env_reset PASSED                [ 37%]
+tests/test_lava_env_tom.py::test_lava_v1_env_step PASSED                 [ 50%]
+tests/test_lava_env_tom.py::test_lava_transitions PASSED                 [ 62%]
+tests/test_lava_env_tom.py::test_preferences_structure PASSED            [ 75%]
+tests/test_lava_env_tom.py::test_initial_state_prior PASSED              [ 87%]
+tests/test_lava_env_tom.py::test_collision_detection PASSED              [100%]
+
+============================== 8 passed in 1.08s ==============================
+
+PASSED: TOM Environment
+
+STEP 3: TOM Model Creation...
+
+================================================================================
+TOM Model Creation
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 25 items
+
+tests/test_model_creation_tom.py::TestLavaModelCreation::test_model_basic_creation PASSED [  4%]
+tests/test_model_creation_tom.py::TestLavaModelCreation::test_model_custom_goal PASSED [  8%]
+tests/test_model_creation_tom.py::TestLavaModelCreation::test_model_dict_structure PASSED [ 12%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_A_matrix_shape PASSED [ 16%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_B_matrix_shape PASSED [ 20%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_C_vector_shape PASSED [ 24%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_D_vector_shape PASSED [ 28%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_A_is_identity PASSED [ 32%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_B_valid_transitions PASSED [ 36%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_C_goal_positive_lava_negative PASSED [ 40%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_D_is_probability_distribution PASSED [ 44%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_stay_action_deterministic PASSED [ 48%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_right_action_moves_right PASSED [ 52%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_up_action_moves_up PASSED [ 56%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_boundary_handling PASSED [ 60%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_basic_creation PASSED [ 64%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_exposes_model_dicts PASSED [ 68%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_policy_shape PASSED [ 72%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_policies_are_valid_actions PASSED [ 76%]
+tests/test_model_creation_tom.py::TestModelConsistency::test_small_model PASSED [ 80%]
+tests/test_model_creation_tom.py::TestModelConsistency::test_large_model PASSED [ 84%]
+tests/test_model_creation_tom.py::TestModelConsistency::test_different_goals PASSED [ 88%]
+tests/test_model_creation_tom.py::TestVerticalMovement::test_down_movement_from_goal_below PASSED [ 92%]
+tests/test_model_creation_tom.py::TestVerticalMovement::test_up_movement_from_goal_above PASSED [ 96%]
+tests/test_model_creation_tom.py::TestVerticalMovement::test_diagonal_goal_allows_both_directions PASSED [100%]
+
+============================= 25 passed in 1.52s ==============================
+
+PASSED: TOM Model Creation
+
+STEP 4: TOM Integration...
+
+================================================================================
+TOM Integration
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 9 items
+
+tests/test_integration_tom.py::TestIntegrationBasic::test_create_all_components PASSED [ 11%]
+tests/test_integration_tom.py::TestIntegrationBasic::test_model_env_compatibility PASSED [ 22%]
+tests/test_integration_tom.py::TestManualInference::test_inference_from_env_observation PASSED [ 33%]
+tests/test_integration_tom.py::TestManualInference::test_belief_update_after_action FAILED [ 44%]
+tests/test_integration_tom.py::TestPolicyEvaluation::test_policy_forward_simulation FAILED [ 55%]
+tests/test_integration_tom.py::TestPolicyEvaluation::test_expected_outcome_distribution FAILED [ 66%]
+tests/test_integration_tom.py::TestMultiAgentInteraction::test_two_agent_env PASSED [ 77%]
+tests/test_integration_tom.py::TestMultiAgentInteraction::test_two_agent_separate_beliefs PASSED [ 88%]
+tests/test_integration_tom.py::TestEndToEndScenario::test_full_pipeline FAILED [100%]
+
+================================== FAILURES ===================================
+_____________ TestManualInference.test_belief_update_after_action _____________
+
+self = <test_integration_tom.TestManualInference object at 0x00000203153349A0>
+
+    def test_belief_update_after_action(self):
+        """Test belief update after taking an action."""
+        model = LavaModel(width=4, height=3)
+        env = LavaV1Env(width=4, height=3, num_agents=1, timesteps=10)
+    
+        key = jr.PRNGKey(0)
+        state, obs = env.reset(key)
+    
+        # Initial observation and belief
+        obs_0 = int(np.asarray(obs[0]["location_obs"])[0])
+        A = np.asarray(model.A["location_obs"])
+        B = np.asarray(model.B["location_state"])
+        D = np.asarray(model.D["location_state"])
+    
+        # Initial belief
+        qs_0 = A[obs_0] * D
+        qs_0 = qs_0 / qs_0.sum()
+    
+        # Take action RIGHT
+        RIGHT = 3
+        next_state, next_obs, _, _, _ = env.step(state, {0: RIGHT})
+    
+        # New observation
+        obs_1 = int(np.asarray(next_obs[0]["location_obs"])[0])
+    
+        # Predicted belief (using B)
+>       qs_pred = (B[:, :, RIGHT] @ qs_0)
+E       ValueError: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 12 is different from 5)
+
+tests\test_integration_tom.py:133: ValueError
+------------------------------ Captured log call ------------------------------
+INFO     src.envs.lava_corridor:lava_corridor.py:73 LavaCorridorConfig: width=4, num_agents=1, slip_prob=0.0
+INFO     src.envs.lava_corridor:lava_corridor.py:74   Start positions: {0: (0, 1), 1: (0, 1)}
+INFO     src.envs.lava_corridor:lava_corridor.py:126 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:127 Lava Corridor Environment Initialized
+INFO     src.envs.lava_corridor:lava_corridor.py:128 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:129 Grid: 4x3 (width x height)
+INFO     src.envs.lava_corridor:lava_corridor.py:130 Safe row: y=1
+INFO     src.envs.lava_corridor:lava_corridor.py:131 Goal: x=3, y=1
+INFO     src.envs.lava_corridor:lava_corridor.py:132 Num agents: 1
+INFO     src.envs.lava_corridor:lava_corridor.py:133 Start positions: {0: (0, 1), 1: (0, 1)}
+INFO     src.envs.lava_corridor:lava_corridor.py:134 Slip probability: 0.0
+INFO     src.envs.lava_corridor:lava_corridor.py:135 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:162 Resetting environment
+INFO     src.envs.lava_corridor:lava_corridor.py:175 Reset complete: t=0
+INFO     src.envs.lava_corridor:lava_corridor.py:178   Agent 0: position=(0, 1), obs_idx=4
+_____________ TestPolicyEvaluation.test_policy_forward_simulation _____________
+
+self = <test_integration_tom.TestPolicyEvaluation object at 0x0000020315334F40>
+
+    def test_policy_forward_simulation(self):
+        """Test forward simulation of a policy using B matrix."""
+        model = LavaModel(width=4, height=3)
+    
+        # Start at state (1, 0) - middle row, leftmost
+        s0 = 1 * model.width + 0  # y=1, x=0
+        qs = np.zeros(model.num_states)
+        qs[s0] = 1.0
+    
+        # Policy: [RIGHT, RIGHT] - move right twice
+        policy = [3, 3]
+        B = np.asarray(model.B["location_state"])
+    
+        # Simulate forward
+        qs_t = qs.copy()
+        trajectory = [s0]
+    
+        for action in policy:
+            # Predict next state
+>           qs_t = B[:, :, action] @ qs_t
+E           ValueError: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 12 is different from 5)
+
+tests\test_integration_tom.py:171: ValueError
+___________ TestPolicyEvaluation.test_expected_outcome_distribution ___________
+
+self = <test_integration_tom.TestPolicyEvaluation object at 0x0000020315335900>
+
+    def test_expected_outcome_distribution(self):
+        """Test computing expected outcome distribution over a policy."""
+        model = LavaModel(width=4, height=3)
+        A = np.asarray(model.A["location_obs"])
+        B = np.asarray(model.B["location_state"])
+        D = np.asarray(model.D["location_state"])
+    
+        # Start belief
+        qs = D.copy()
+    
+        # Policy: STAY for 3 steps
+        policy = [4, 4, 4]
+    
+        # Collect observation distributions
+        obs_dists = []
+    
+        qs_t = qs.copy()
+        for action in policy:
+            # Predict next belief
+>           qs_t = B[:, :, action] @ qs_t
+E           ValueError: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 12 is different from 5)
+
+tests\test_integration_tom.py:203: ValueError
+___________________ TestEndToEndScenario.test_full_pipeline ___________________
+
+self = <test_integration_tom.TestEndToEndScenario object at 0x0000020315334C40>
+
+    def test_full_pipeline(self):
+        """Test full pipeline: create, reset, observe, infer, predict, step."""
+        # 1. Create components
+        model = LavaModel(width=4, height=3)
+        agent = LavaAgent(model, horizon=1, gamma=8.0)
+        env = LavaV1Env(width=4, height=3, num_agents=1, timesteps=10)
+    
+        # 2. Reset environment
+        key = jr.PRNGKey(0)
+        state, obs = env.reset(key)
+    
+        # 3. Observe
+        obs_t = int(np.asarray(obs[0]["location_obs"])[0])
+    
+        # 4. Infer state
+        A = np.asarray(model.A["location_obs"])
+        D = np.asarray(model.D["location_state"])
+        qs = A[obs_t] * D
+        qs = qs / qs.sum()
+    
+        # 5. Evaluate policies (simple: just count expected reward)
+        B = np.asarray(model.B["location_state"])
+        C = np.asarray(model.C["location_obs"])
+    
+        policy_values = []
+        for policy_idx in range(len(agent.policies)):
+            action = int(agent.policies[policy_idx, 0, 0])
+    
+            # Predict next state
+>           qs_next = B[:, :, action] @ qs
+E           ValueError: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 12 is different from 5)
+
+tests\test_integration_tom.py:322: ValueError
+------------------------------ Captured log call ------------------------------
+INFO     src.envs.lava_corridor:lava_corridor.py:73 LavaCorridorConfig: width=4, num_agents=1, slip_prob=0.0
+INFO     src.envs.lava_corridor:lava_corridor.py:74   Start positions: {0: (0, 1), 1: (0, 1)}
+INFO     src.envs.lava_corridor:lava_corridor.py:126 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:127 Lava Corridor Environment Initialized
+INFO     src.envs.lava_corridor:lava_corridor.py:128 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:129 Grid: 4x3 (width x height)
+INFO     src.envs.lava_corridor:lava_corridor.py:130 Safe row: y=1
+INFO     src.envs.lava_corridor:lava_corridor.py:131 Goal: x=3, y=1
+INFO     src.envs.lava_corridor:lava_corridor.py:132 Num agents: 1
+INFO     src.envs.lava_corridor:lava_corridor.py:133 Start positions: {0: (0, 1), 1: (0, 1)}
+INFO     src.envs.lava_corridor:lava_corridor.py:134 Slip probability: 0.0
+INFO     src.envs.lava_corridor:lava_corridor.py:135 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:162 Resetting environment
+INFO     src.envs.lava_corridor:lava_corridor.py:175 Reset complete: t=0
+INFO     src.envs.lava_corridor:lava_corridor.py:178   Agent 0: position=(0, 1), obs_idx=4
+=========================== short test summary info ===========================
+FAILED tests/test_integration_tom.py::TestManualInference::test_belief_update_after_action
+FAILED tests/test_integration_tom.py::TestPolicyEvaluation::test_policy_forward_simulation
+FAILED tests/test_integration_tom.py::TestPolicyEvaluation::test_expected_outcome_distribution
+FAILED tests/test_integration_tom.py::TestEndToEndScenario::test_full_pipeline
+========================= 4 failed, 5 passed in 1.20s =========================
+
+FAILED: TOM Integration
+
+STEP 5: LavaV2Env Layout Variants...
+
+================================================================================
+LavaV2Env Variants
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 14 items
+
+tests/test_lava_v2_env.py::TestLayoutCreation::test_narrow_layout PASSED [  7%]
+tests/test_lava_v2_env.py::TestLayoutCreation::test_wide_layout PASSED   [ 14%]
+tests/test_lava_v2_env.py::TestLayoutCreation::test_bottleneck_layout PASSED [ 21%]
+tests/test_lava_v2_env.py::TestLayoutCreation::test_risk_reward_layout PASSED [ 28%]
+tests/test_lava_v2_env.py::TestLavaV2EnvCreation::test_create_wide_env PASSED [ 35%]
+tests/test_lava_v2_env.py::TestLavaV2EnvCreation::test_create_bottleneck_env PASSED [ 42%]
+tests/test_lava_v2_env.py::TestExtendedObservations::test_observation_structure PASSED [ 50%]
+tests/test_lava_v2_env.py::TestExtendedObservations::test_symmetric_observations PASSED [ 57%]
+tests/test_lava_v2_env.py::TestDifferentStartPositions::test_wide_different_starts PASSED [ 64%]
+tests/test_lava_v2_env.py::TestDifferentStartPositions::test_narrow_same_x_different_y PASSED [ 71%]
+tests/test_lava_v2_env.py::TestCollisionDetection::test_collision_when_same_position PASSED [ 78%]
+tests/test_lava_v2_env.py::TestCollisionDetection::test_no_collision_different_positions PASSED [ 85%]
+tests/test_lava_v2_env.py::TestGoalReaching::test_goal_detection PASSED  [ 92%]
+tests/test_lava_v2_env.py::TestRendering::test_render_initial_state PASSED [100%]
+
+============================= 14 passed in 0.56s ==============================
+
+PASSED: LavaV2Env Variants
+
+STEP 6: Path Flexibility Metrics (E, R, O, F)...
+
+================================================================================
+Path Flexibility Metrics
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 10 items
+
+tests/test_path_flexibility_metrics.py::TestEmpowerment::test_empowerment_branching_vs_dead_end PASSED [ 10%]
+tests/test_path_flexibility_metrics.py::TestEmpowerment::test_empowerment_decreases_along_chain PASSED [ 20%]
+tests/test_path_flexibility_metrics.py::TestReturnability::test_returnability_shared_outcomes PASSED [ 30%]
+tests/test_path_flexibility_metrics.py::TestReturnability::test_returnability_increases_with_horizon PASSED [ 40%]
+tests/test_path_flexibility_metrics.py::TestOverlap::test_overlap_identical_policies PASSED [ 50%]
+tests/test_path_flexibility_metrics.py::TestOverlap::test_overlap_diverging_policies PASSED [ 60%]
+tests/test_path_flexibility_metrics.py::TestPathFlexibility::test_flexibility_composition PASSED [ 70%]
+tests/test_path_flexibility_metrics.py::TestPathFlexibility::test_flexibility_weights PASSED [ 80%]
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_single_state_model PASSED [ 90%]
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_zero_horizon PASSED [100%]
+
+============================== warnings summary ===============================
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_zero_horizon
+  C:\Users\mahau\anaconda3\envs\alignment\lib\site-packages\numpy\core\fromnumeric.py:3504: RuntimeWarning: Mean of empty slice.
+    return _methods._mean(a, axis=axis, dtype=dtype,
+
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_zero_horizon
+  C:\Users\mahau\anaconda3\envs\alignment\lib\site-packages\numpy\core\_methods.py:129: RuntimeWarning: invalid value encountered in scalar divide
+    ret = ret.dtype.type(ret / rcount)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 10 passed, 2 warnings in 0.37s ========================
+
+PASSED: Path Flexibility Metrics
+
+STEP 7: F-Aware Policy Prior...
+
+================================================================================
+F-Aware Prior
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 8 items
+
+tests/test_F_aware_prior.py::TestFAwarePriorBaseline::test_kappa_zero_equals_baseline PASSED [ 12%]
+tests/test_F_aware_prior.py::TestFAwarePriorBiasing::test_kappa_positive_biases_toward_high_F PASSED [ 25%]
+tests/test_F_aware_prior.py::TestFAwarePriorBiasing::test_kappa_strength PASSED [ 37%]
+tests/test_F_aware_prior.py::TestJointFlexibilityWeighting::test_beta_weighting PASSED [ 50%]
+tests/test_F_aware_prior.py::TestEFEAndFlexibilityTradeoff::test_EFE_dominates_when_kappa_small PASSED [ 62%]
+tests/test_F_aware_prior.py::TestEFEAndFlexibilityTradeoff::test_flexibility_can_overcome_EFE_when_kappa_large PASSED [ 75%]
+tests/test_F_aware_prior.py::TestNumericalStability::test_large_gamma_values PASSED [ 87%]
+tests/test_F_aware_prior.py::TestNumericalStability::test_extreme_flexibility_differences PASSED [100%]
+
+============================== 8 passed in 0.37s ==============================
+
+PASSED: F-Aware Prior
+
+STEP 8: JAX Path Flexibility Correctness...
+
+================================================================================
+JAX Path Flexibility
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 7 items
+
+tests/test_jax_correctness.py::test_empowerment_one_step PASSED          [ 14%]
+tests/test_jax_correctness.py::test_rollout_beliefs_and_obs FAILED       [ 28%]
+tests/test_jax_correctness.py::test_empowerment_along_rollout FAILED     [ 42%]
+tests/test_jax_correctness.py::test_returnability FAILED                 [ 57%]
+tests/test_jax_correctness.py::test_overlap FAILED                       [ 71%]
+tests/test_jax_correctness.py::test_full_flexibility_computation FAILED  [ 85%]
+tests/test_jax_correctness.py::test_jax_faster_than_numpy FAILED         [100%]
+
+================================== FAILURES ===================================
+________________________ test_rollout_beliefs_and_obs _________________________
+
+lava_model_h3 = LavaModel(width=7, height=3, goal_x=6, goal_y=1, safe_cells=[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)], start_pos=(0, 1))
+
+    def test_rollout_beliefs_and_obs(lava_model_h3):
+        """Test that JAX belief rollout matches NumPy."""
+        model = lava_model_h3
+        policy_id = 0
+    
+        # NumPy rollout
+>       q_s_numpy, p_o_numpy = rollout_beliefs_and_obs(policy_id, model, model.horizon)
+
+tests\test_jax_correctness.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+policy_id = 0
+model = LavaModel(width=7, height=3, goal_x=6, goal_y=1, safe_cells=[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)], start_pos=(0, 1))
+horizon = 3, current_qs = None
+
+    def rollout_beliefs_and_obs(
+        policy_id: int,
+        model: Any,
+        horizon: int,
+        current_qs: np.ndarray = None,
+    ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        """
+        Rollout beliefs and observations under a policy.
+    
+        This is the CLEAN API for forward simulation:
+        - Takes a policy_id and model
+        - Returns q_s_over_time and p_o_over_time
+    
+        Parameters
+        ----------
+        policy_id : int
+            Index of policy in model.policies
+        model : Any
+            Agent's generative model with:
+            - A: [num_obs, num_states] observation likelihood
+            - B: [num_states, num_states, num_actions] or [num_actions, num_states, num_states]
+            - D: [num_states] initial state prior
+            - policies: list of action sequences
+        horizon : int
+            Number of timesteps to simulate
+        current_qs : np.ndarray, optional
+            Initial belief state (if None, uses model.D)
+    
+        Returns
+        -------
+        q_s_over_time : List[np.ndarray]
+            Belief states over time [q_s(0), q_s(1), ..., q_s(H-1)]
+        p_o_over_time : List[np.ndarray]
+            Observation distributions over time [p(o_0|\u03c0), p(o_1|\u03c0), ..., p(o_{H-1}|\u03c0)]
+        """
+        # Extract model components
+        A = model.A[0] if isinstance(model.A, list) else model.A
+        B_raw = model.B[0] if isinstance(model.B, list) else model.B
+        D = model.D[0] if isinstance(model.D, list) else model.D
+        policy_library = model.policies if hasattr(model, 'policies') else []
+    
+        # Normalize B to [num_actions, num_states, num_states] if needed
+>       if len(B_raw.shape) == 3:
+E       AttributeError: 'dict' object has no attribute 'shape'
+
+src\metrics\path_flexibility.py:538: AttributeError
+_______________________ test_empowerment_along_rollout ________________________
+
+lava_model_h3 = LavaModel(width=7, height=3, goal_x=6, goal_y=1, safe_cells=[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)], start_pos=(0, 1))
+
+    def test_empowerment_along_rollout(lava_model_h3):
+        """Test that JAX empowerment along rollout matches NumPy."""
+        model = lava_model_h3
+        policy_id = 0
+    
+        # NumPy computation
+>       E_numpy = compute_empowerment_along_rollout(model, policy_id, model.horizon)
+
+tests\test_jax_correctness.py:131: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\metrics\path_flexibility.py:837: in compute_empowerment_along_rollout
+    q_s_over_time, _ = rollout_beliefs_and_obs(policy_id, agent_model, horizon, current_qs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+policy_id = 0
+model = LavaModel(width=7, height=3, goal_x=6, goal_y=1, safe_cells=[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)], start_pos=(0, 1))
+horizon = 3, current_qs = None
+
+    def rollout_beliefs_and_obs(
+        policy_id: int,
+        model: Any,
+        horizon: int,
+        current_qs: np.ndarray = None,
+    ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        """
+        Rollout beliefs and observations under a policy.
+    
+        This is the CLEAN API for forward simulation:
+        - Takes a policy_id and model
+        - Returns q_s_over_time and p_o_over_time
+    
+        Parameters
+        ----------
+        policy_id : int
+            Index of policy in model.policies
+        model : Any
+            Agent's generative model with:
+            - A: [num_obs, num_states] observation likelihood
+            - B: [num_states, num_states, num_actions] or [num_actions, num_states, num_states]
+            - D: [num_states] initial state prior
+            - policies: list of action sequences
+        horizon : int
+            Number of timesteps to simulate
+        current_qs : np.ndarray, optional
+            Initial belief state (if None, uses model.D)
+    
+        Returns
+        -------
+        q_s_over_time : List[np.ndarray]
+            Belief states over time [q_s(0), q_s(1), ..., q_s(H-1)]
+        p_o_over_time : List[np.ndarray]
+            Observation distributions over time [p(o_0|\u03c0), p(o_1|\u03c0), ..., p(o_{H-1}|\u03c0)]
+        """
+        # Extract model components
+        A = model.A[0] if isinstance(model.A, list) else model.A
+        B_raw = model.B[0] if isinstance(model.B, list) else model.B
+        D = model.D[0] if isinstance(model.D, list) else model.D
+        policy_library = model.policies if hasattr(model, 'policies') else []
+    
+        # Normalize B to [num_actions, num_states, num_states] if needed
+>       if len(B_raw.shape) == 3:
+E       AttributeError: 'dict' object has no attribute 'shape'
+
+src\metrics\path_flexibility.py:538: AttributeError
+_____________________________ test_returnability ______________________________
+
+lava_model_h3 = LavaModel(width=7, height=3, goal_x=6, goal_y=1, safe_cells=[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)], start_pos=(0, 1))
+
+    def test_returnability(lava_model_h3):
+        """Test that JAX returnability matches NumPy."""
+        model = lava_model_h3
+        policy_id = 0
+    
+        # Get observation distributions over time
+>       _, p_o_numpy = rollout_beliefs_and_obs(policy_id, model, model.horizon)
+
+tests\test_jax_correctness.py:157: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+policy_id = 0
+model = LavaModel(width=7, height=3, goal_x=6, goal_y=1, safe_cells=[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)], start_pos=(0, 1))
+horizon = 3, current_qs = None
+
+    def rollout_beliefs_and_obs(
+        policy_id: int,
+        model: Any,
+        horizon: int,
+        current_qs: np.ndarray = None,
+    ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        """
+        Rollout beliefs and observations under a policy.
+    
+        This is the CLEAN API for forward simulation:
+        - Takes a policy_id and model
+        - Returns q_s_over_time and p_o_over_time
+    
+        Parameters
+        ----------
+        policy_id : int
+            Index of policy in model.policies
+        model : Any
+            Agent's generative model with:
+            - A: [num_obs, num_states] observation likelihood
+            - B: [num_states, num_states, num_actions] or [num_actions, num_states, num_states]
+            - D: [num_states] initial state prior
+            - policies: list of action sequences
+        horizon : int
+            Number of timesteps to simulate
+        current_qs : np.ndarray, optional
+            Initial belief state (if None, uses model.D)
+    
+        Returns
+        -------
+        q_s_over_time : List[np.ndarray]
+            Belief states over time [q_s(0), q_s(1), ..., q_s(H-1)]
+        p_o_over_time : List[np.ndarray]
+            Observation distributions over time [p(o_0|\u03c0), p(o_1|\u03c0), ..., p(o_{H-1}|\u03c0)]
+        """
+        # Extract model components
+        A = model.A[0] if isinstance(model.A, list) else model.A
+        B_raw = model.B[0] if isinstance(model.B, list) else model.B
+        D = model.D[0] if isinstance(model.D, list) else model.D
+        policy_library = model.policies if hasattr(model, 'policies') else []
+    
+        # Normalize B to [num_actions, num_states, num_states] if needed
+>       if len(B_raw.shape) == 3:
+E       AttributeError: 'dict' object has no attribute 'shape'
+
+src\metrics\path_flexibility.py:538: AttributeError
+________________________________ test_overlap _________________________________
+
+lava_model_h3 = LavaModel(width=7, height=3, goal_x=6, goal_y=1, safe_cells=[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)], start_pos=(0, 1))
+
+    def test_overlap(lava_model_h3):
+        """Test that JAX overlap matches NumPy."""
+        model = lava_model_h3
+        policy_id = 0
+    
+        # Get observation distributions for two "agents" (using same policy for simplicity)
+>       _, p_o_i_numpy = rollout_beliefs_and_obs(policy_id, model, model.horizon)
+
+tests\test_jax_correctness.py:180: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+policy_id = 0
+model = LavaModel(width=7, height=3, goal_x=6, goal_y=1, safe_cells=[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)], start_pos=(0, 1))
+horizon = 3, current_qs = None
+
+    def rollout_beliefs_and_obs(
+        policy_id: int,
+        model: Any,
+        horizon: int,
+        current_qs: np.ndarray = None,
+    ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        """
+        Rollout beliefs and observations under a policy.
+    
+        This is the CLEAN API for forward simulation:
+        - Takes a policy_id and model
+        - Returns q_s_over_time and p_o_over_time
+    
+        Parameters
+        ----------
+        policy_id : int
+            Index of policy in model.policies
+        model : Any
+            Agent's generative model with:
+            - A: [num_obs, num_states] observation likelihood
+            - B: [num_states, num_states, num_actions] or [num_actions, num_states, num_states]
+            - D: [num_states] initial state prior
+            - policies: list of action sequences
+        horizon : int
+            Number of timesteps to simulate
+        current_qs : np.ndarray, optional
+            Initial belief state (if None, uses model.D)
+    
+        Returns
+        -------
+        q_s_over_time : List[np.ndarray]
+            Belief states over time [q_s(0), q_s(1), ..., q_s(H-1)]
+        p_o_over_time : List[np.ndarray]
+            Observation distributions over time [p(o_0|\u03c0), p(o_1|\u03c0), ..., p(o_{H-1}|\u03c0)]
+        """
+        # Extract model components
+        A = model.A[0] if isinstance(model.A, list) else model.A
+        B_raw = model.B[0] if isinstance(model.B, list) else model.B
+        D = model.D[0] if isinstance(model.D, list) else model.D
+        policy_library = model.policies if hasattr(model, 'policies') else []
+    
+        # Normalize B to [num_actions, num_states, num_states] if needed
+>       if len(B_raw.shape) == 3:
+E       AttributeError: 'dict' object has no attribute 'shape'
+
+src\metrics\path_flexibility.py:538: AttributeError
+______________________ test_full_flexibility_computation ______________________
+
+lava_model_h3 = LavaModel(width=7, height=3, goal_x=6, goal_y=1, safe_cells=[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)], start_pos=(0, 1))
+
+    def test_full_flexibility_computation(lava_model_h3):
+        """
+        Test that full F computation (all policies) matches between JAX and NumPy.
+    
+        This is the most important integration test.
+        """
+        model = lava_model_h3
+    
+        # Parameters
+        shared_outcome_set = list(range(7))
+        lambdas = (1.0, 1.0, 1.0)
+        num_test_policies = 10  # Test subset for speed
+    
+        # Get policy IDs
+        policy_ids = list(range(num_test_policies))
+    
+        # NumPy computation
+        from src.metrics.path_flexibility import compute_F_arrays_for_policies
+    
+        class MockModel:
+            def __init__(self, A, B, D, policies):
+                self.A = [A]
+                self.B = [B]
+                self.D = [D]
+                self.policies = policies
+    
+        A_np = np.array(model.A["location_obs"])
+        B_np = np.array(model.B["location_state"])
+        D_np = np.array(model.D["location_state"])
+    
+        # Transpose B if needed
+        if B_np.shape[0] == B_np.shape[1] and B_np.shape[2] < B_np.shape[0]:
+            B_np = np.transpose(B_np, (2, 0, 1))
+    
+        focal_model = MockModel(A_np, B_np, D_np, model.policies)
+        other_model = MockModel(A_np, B_np, D_np, model.policies)
+    
+>       F_i_numpy, F_j_numpy = compute_F_arrays_for_policies(
+            policies=policy_ids,
+            focal_agent_model=focal_model,
+            other_agent_model=other_model,
+            shared_outcome_set=shared_outcome_set,
+            horizon=model.horizon,
+            lambdas=lambdas,
+        )
+
+tests\test_jax_correctness.py:233: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\metrics\path_flexibility.py:1170: in compute_F_arrays_for_policies
+    _, p_o_i = rollout_beliefs_and_obs(policy_id, focal_agent_model, horizon, current_qs_i)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+policy_id = 0
+model = <test_jax_correctness.test_full_flexibility_computation.<locals>.MockModel object at 0x000001CA5AB35E10>
+horizon = 3, current_qs = None
+
+    def rollout_beliefs_and_obs(
+        policy_id: int,
+        model: Any,
+        horizon: int,
+        current_qs: np.ndarray = None,
+    ) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        """
+        Rollout beliefs and observations under a policy.
+    
+        This is the CLEAN API for forward simulation:
+        - Takes a policy_id and model
+        - Returns q_s_over_time and p_o_over_time
+    
+        Parameters
+        ----------
+        policy_id : int
+            Index of policy in model.policies
+        model : Any
+            Agent's generative model with:
+            - A: [num_obs, num_states] observation likelihood
+            - B: [num_states, num_states, num_actions] or [num_actions, num_states, num_states]
+            - D: [num_states] initial state prior
+            - policies: list of action sequences
+        horizon : int
+            Number of timesteps to simulate
+        current_qs : np.ndarray, optional
+            Initial belief state (if None, uses model.D)
+    
+        Returns
+        -------
+        q_s_over_time : List[np.ndarray]
+            Belief states over time [q_s(0), q_s(1), ..., q_s(H-1)]
+        p_o_over_time : List[np.ndarray]
+            Observation distributions over time [p(o_0|\u03c0), p(o_1|\u03c0), ..., p(o_{H-1}|\u03c0)]
+        """
+        # Extract model components
+        A = model.A[0] if isinstance(model.A, list) else model.A
+        B_raw = model.B[0] if isinstance(model.B, list) else model.B
+        D = model.D[0] if isinstance(model.D, list) else model.D
+        policy_library = model.policies if hasattr(model, 'policies') else []
+    
+        # Normalize B to [num_actions, num_states, num_states] if needed
+        if len(B_raw.shape) == 3:
+            # Check if it's [num_states, num_states, num_actions] or [num_actions, num_states, num_states]
+            # Heuristic: if B_raw.shape[0] == B_raw.shape[1], assume [num_states, num_states, num_actions]
+            if B_raw.shape[0] == B_raw.shape[1] and B_raw.shape[2] < B_raw.shape[0]:
+                # Transpose to [num_actions, num_states, num_states]
+                B = np.transpose(B_raw, (2, 0, 1))
+            else:
+                B = B_raw
+        else:
+>           raise ValueError(f"B must be 3D, got shape {B_raw.shape}")
+E           ValueError: B must be 3D, got shape (21, 21, 21, 5)
+
+src\metrics\path_flexibility.py:547: ValueError
+_________________________ test_jax_faster_than_numpy __________________________
+
+lava_model_h3 = LavaModel(width=7, height=3, goal_x=6, goal_y=1, safe_cells=[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1)], start_pos=(0, 1))
+
+    def test_jax_faster_than_numpy(lava_model_h3):
+        """
+        Sanity check that JAX is actually faster than NumPy.
+    
+        This test may be skipped in CI/CD environments without GPU.
+        """
+        import time
+    
+        model = lava_model_h3
+        shared_outcome_set = list(range(7))
+        lambdas = (1.0, 1.0, 1.0)
+        num_test_policies = 25  # 25 policies for timing
+    
+        # Prepare data
+        A_np = np.array(model.A["location_obs"])
+        B_np = np.array(model.B["location_state"])
+        D_np = np.array(model.D["location_state"])
+    
+        if B_np.shape[0] == B_np.shape[1] and B_np.shape[2] < B_np.shape[0]:
+            B_np = np.transpose(B_np, (2, 0, 1))
+    
+        class MockModel:
+            def __init__(self, A, B, D, policies):
+                self.A = [A]
+                self.B = [B]
+                self.D = [D]
+                self.policies = policies
+    
+        focal_model = MockModel(A_np, B_np, D_np, model.policies)
+        other_model = MockModel(A_np, B_np, D_np, model.policies)
+    
+        A_jax = jnp.array(A_np)
+        B_jax = jnp.array(B_np)
+        D_jax = jnp.array(D_np)
+        policies_jax = jnp.array(model.policies[:num_test_policies], dtype=jnp.int32)
+    
+        # Warm up JAX
+>       _ = compute_F_arrays_for_policies_jax(
+            policies=policies_jax[:5],
+            A_i=A_jax, B_i=B_jax, D_i=D_jax,
+            A_j=A_jax, B_j=B_jax, D_j=D_jax,
+            shared_outcome_set=shared_outcome_set,
+            lambdas=lambdas,
+        )
+
+tests\test_jax_correctness.py:308: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\metrics\jax_path_flexibility.py:538: in compute_F_arrays_for_policies_jax
+    shared_outcome_mask = shared_outcome_mask.at[shared_outcome_set].set(1.0)
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\numpy\array_methods.py:788: in set
+    return scatter._scatter_update(self.array, self.index, values, lax.scatter,
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\ops\scatter.py:75: in _scatter_update
+    treedef, static_idx, dynamic_idx = jnp._split_index_for_jit(idx, x.shape)
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\numpy\lax_numpy.py:12017: in _split_index_for_jit
+    idx = _eliminate_deprecated_list_indexing(idx)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+idx = [0, 1, 2, 3, 4, 5, ...]
+
+    def _eliminate_deprecated_list_indexing(idx):
+      # "Basic slicing is initiated if the selection object is a non-array,
+      # non-tuple sequence containing slice objects, [Ellipses, or newaxis
+      # objects]". Detects this and raises a TypeError.
+      if not isinstance(idx, tuple):
+        if isinstance(idx, Sequence) and not isinstance(idx, (Array, np.ndarray, str)):
+          # As of numpy 1.16, some non-tuple sequences of indices result in a warning, while
+          # others are converted to arrays, based on a set of somewhat convoluted heuristics
+          # (See https://github.com/numpy/numpy/blob/v1.19.2/numpy/core/src/multiarray/mapping.c#L179-L343)
+          # In JAX, we raise an informative TypeError for *all* non-tuple sequences.
+          if any(_should_unpack_list_index(i) for i in idx):
+            msg = ("Using a non-tuple sequence for multidimensional indexing is not allowed; "
+                   "use `arr[tuple(seq)]` instead of `arr[seq]`. "
+                   "See https://github.com/jax-ml/jax/issues/4564 for more information.")
+          else:
+            msg = ("Using a non-tuple sequence for multidimensional indexing is not allowed; "
+                   "use `arr[array(seq)]` instead of `arr[seq]`. "
+                   "See https://github.com/jax-ml/jax/issues/4564 for more information.")
+>         raise TypeError(msg)
+E         TypeError: Using a non-tuple sequence for multidimensional indexing is not allowed; use `arr[array(seq)]` instead of `arr[seq]`. See https://github.com/jax-ml/jax/issues/4564 for more information.
+
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\numpy\lax_numpy.py:12286: TypeError
+=========================== short test summary info ===========================
+FAILED tests/test_jax_correctness.py::test_rollout_beliefs_and_obs - Attribut...
+FAILED tests/test_jax_correctness.py::test_empowerment_along_rollout - Attrib...
+FAILED tests/test_jax_correctness.py::test_returnability - AttributeError: 'd...
+FAILED tests/test_jax_correctness.py::test_overlap - AttributeError: 'dict' o...
+FAILED tests/test_jax_correctness.py::test_full_flexibility_computation - Val...
+FAILED tests/test_jax_correctness.py::test_jax_faster_than_numpy - TypeError:...
+========================= 6 failed, 1 passed in 1.63s =========================
+
+FAILED: JAX Path Flexibility
+
+STEP 9: JAX Empathy Rollout Correctness...
+
+================================================================================
+JAX Empathy Rollout
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 5 items
+
+tests/test_jax_empathy.py::test_propagate_belief_3d PASSED               [ 20%]
+tests/test_jax_empathy.py::test_propagate_belief_4d PASSED               [ 40%]
+tests/test_jax_empathy.py::test_epistemic_info_gain PASSED               [ 60%]
+tests/test_jax_empathy.py::test_full_empathic_G_horizon1 SKIPPED (Fu...) [ 80%]
+tests/test_jax_empathy.py::test_full_empathic_G_horizon3 SKIPPED (Fu...) [100%]
+
+======================== 3 passed, 2 skipped in 0.66s =========================
+
+PASSED: JAX Empathy Rollout
+
+STEP 10: 4D B Matrix and Multi-Step ToM...
+
+================================================================================
+4D B Matrix
+================================================================================
+
+============================================================
+Testing 4D B Matrix and Multi-Step ToM Planning
+============================================================
+
+============================================================
+TEST 1: B Matrix 4D Structure
+============================================================
+
+B matrix shape: (12, 12, 12, 5)
+Expected: (num_states, num_states, num_states, num_actions)
+Got: (12, 12, 12, 5)
+
+Agent at state 4 (0,1), other at state 5 (1,1)
+Agent tries RIGHT (action 3)
+Move to 5: 1.00
+NOTE: In Regime B, collisions are possible (handled via preferences)
+
+============================================================
+TEST FAILED: 'charmap' codec can't encode character '\u2713' in position 2: character maps to <undefined>
+============================================================
+
+Traceback (most recent call last):
+  File "C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\test_4d_b_matrix.py", line 170, in main
+    test_b_matrix_structure()
+  File "C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\test_4d_b_matrix.py", line 61, in test_b_matrix_structure
+    print("\n\u2713 PASS: B matrix has correct 4D structure\n")
+  File "C:\Users\mahau\anaconda3\envs\alignment\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 2: character maps to <undefined>
+
+FAILED: 4D B Matrix
+
+STEP 11: JAX Planner Speedup Verification...
+
+================================================================================
+JAX Planner Speedup
+================================================================================
+================================================================================
+JAX-ENABLED EMPATHIC PLANNER TEST
+================================================================================
+
+Creating test models (horizon=3, 5^3=125 policies)...
+
+Traceback (most recent call last):
+  File "C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\test_jax_planner.py", line 62, in <module>
+    print(f"\u2713 Models created")
+  File "C:\Users\mahau\anaconda3\envs\alignment\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>
+
+FAILED: JAX Planner Speedup
+
+================================================================================
+                            SUMMARY
+================================================================================
+FAILED: 4/11 tests
+PASSED: 7/11 tests
+
+Failed tests:
+  - test_integration_tom.py
+  - test_jax_correctness.py
+  - test_4d_b_matrix.py
+  - test_jax_planner.py
+================================================================================
+
+Test run completed: 2025-12-11 16:04:17
+Log saved to: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\results\test_logs\test_run_20251211_160359.log
+

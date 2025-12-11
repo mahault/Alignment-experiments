@@ -219,7 +219,7 @@ def main():
 
     all_passed = True
     for name, passed in results:
-        status = "✅ PASSED" if passed else "❌ FAILED"
+        status = "[PASS]" if passed else "[FAIL]"
         print(f"  {name:.<50} {status}")
         if not passed:
             all_passed = False
@@ -227,14 +227,14 @@ def main():
     print("="*80 + "\n")
 
     if all_passed:
-        print("🎉 ALL TOM TESTS PASSED! LavaCorridor TOM system is ready.")
+        print("ALL TOM TESTS PASSED! LavaCorridor TOM system is ready.")
         print("\nNext steps:")
         print("  1. Run multi-agent TOM rollout")
         print("  2. Test ToMify for recursive inference")
         print("  3. Run experiments with path flexibility metrics")
         return 0
     else:
-        print("⚠️  SOME TOM TESTS FAILED. Please review errors above.")
+        print("SOME TOM TESTS FAILED. Please review errors above.")
         return 1
 
 

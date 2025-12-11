@@ -1,0 +1,714 @@
+
+Test run started: 2025-12-11 16:14:25
+Log file: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\results\test_logs\test_run_20251211_161425.log
+
+
+================================================================================
+          RUNNING FULL TEST SUITE
+================================================================================
+
+STEP 1: TOM Infrastructure Smoke Test...
+
+================================================================================
+TOM Smoke Test
+================================================================================
+
+================================================================================
+                    TOM LAVA CORRIDOR SMOKE TEST
+================================================================================
+
+
+================================================================================
+                              SUMMARY
+================================================================================
+  TOM Imports....................................... [PASS]
+  TOM Model Creation................................ [PASS]
+  TOM Environment................................... [PASS]
+  TOM Agent Inference............................... [PASS]
+================================================================================
+
+ALL TOM TESTS PASSED! LavaCorridor TOM system is ready.
+
+Next steps:
+  1. Run multi-agent TOM rollout
+  2. Test ToMify for recursive inference
+  3. Run experiments with path flexibility metrics
+
+2025-12-11 16:14:26,988 - __main__ - INFO - ================================================================================
+2025-12-11 16:14:26,988 - __main__ - INFO - STEP 1: Testing TOM imports...
+2025-12-11 16:14:26,988 - __main__ - INFO - ================================================================================
+2025-12-11 16:14:27,006 - __main__ - INFO -   \u2713 TOM model imports
+2025-12-11 16:14:27,006 - __main__ - INFO -   \u2713 TOM env imports
+2025-12-11 16:14:27,686 - __main__ - INFO -   \u2713 TOM planning imports
+2025-12-11 16:14:27,686 - __main__ - INFO - 
+\u2705 All TOM imports successful!
+
+2025-12-11 16:14:27,687 - __main__ - INFO - ================================================================================
+2025-12-11 16:14:27,687 - __main__ - INFO - STEP 2: Testing TOM model creation...
+2025-12-11 16:14:27,687 - __main__ - INFO - ================================================================================
+INFO:2025-12-11 16:14:27,806:jax._src.xla_bridge:927: Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+2025-12-11 16:14:27,806 - jax._src.xla_bridge - INFO - Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+INFO:2025-12-11 16:14:27,810:jax._src.xla_bridge:927: Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
+2025-12-11 16:14:27,810 - jax._src.xla_bridge - INFO - Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
+2025-12-11 16:14:29,021 - __main__ - INFO -   \u2713 LavaModel created
+2025-12-11 16:14:29,026 - __main__ - INFO -     A keys: ['location_obs', 'edge_obs', 'cell_collision_obs', 'edge_collision_obs']
+2025-12-11 16:14:29,026 - __main__ - INFO -     B keys: ['location_state']
+2025-12-11 16:14:29,026 - __main__ - INFO -     C keys: ['location_obs', 'edge_obs', 'cell_collision_obs', 'edge_collision_obs']
+2025-12-11 16:14:29,026 - __main__ - INFO -     D keys: ['location_state']
+2025-12-11 16:14:29,162 - __main__ - INFO -   \u2713 LavaAgent created
+2025-12-11 16:14:29,162 - __main__ - INFO -     Num policies: 5
+2025-12-11 16:14:29,163 - __main__ - INFO -     Policy shape: (5, 1, 1)
+2025-12-11 16:14:29,163 - __main__ - INFO -     A shape: (12, 12)
+2025-12-11 16:14:29,163 - __main__ - INFO -     B shape: (12, 12, 12, 5)
+2025-12-11 16:14:29,163 - __main__ - INFO -     C shape: (12,)
+2025-12-11 16:14:29,163 - __main__ - INFO -     D shape: (12,)
+2025-12-11 16:14:29,163 - __main__ - INFO - 
+\u2705 TOM model creation successful!
+
+2025-12-11 16:14:29,163 - __main__ - INFO - ================================================================================
+2025-12-11 16:14:29,163 - __main__ - INFO - STEP 3: Testing TOM environment interaction...
+2025-12-11 16:14:29,163 - __main__ - INFO - ================================================================================
+2025-12-11 16:14:29,163 - src.envs.lava_corridor - INFO - LavaCorridorConfig: width=4, num_agents=2, slip_prob=0.0
+2025-12-11 16:14:29,163 - src.envs.lava_corridor - INFO -   Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 16:14:29,163 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:14:29,163 - src.envs.lava_corridor - INFO - Lava Corridor Environment Initialized
+2025-12-11 16:14:29,163 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:14:29,163 - src.envs.lava_corridor - INFO - Grid: 4x3 (width x height)
+2025-12-11 16:14:29,163 - src.envs.lava_corridor - INFO - Safe row: y=1
+2025-12-11 16:14:29,163 - src.envs.lava_corridor - INFO - Goal: x=3, y=1
+2025-12-11 16:14:29,163 - src.envs.lava_corridor - INFO - Num agents: 2
+2025-12-11 16:14:29,164 - src.envs.lava_corridor - INFO - Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 16:14:29,164 - src.envs.lava_corridor - INFO - Slip probability: 0.0
+2025-12-11 16:14:29,164 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:14:29,164 - __main__ - INFO -   \u2713 LavaV1Env created
+2025-12-11 16:14:29,164 - __main__ - INFO -     Grid: 4x3
+2025-12-11 16:14:29,164 - __main__ - INFO -     Num agents: 2
+2025-12-11 16:14:29,192 - src.envs.lava_corridor - INFO - Resetting environment
+2025-12-11 16:14:29,192 - src.envs.lava_corridor - INFO - Reset complete: t=0
+2025-12-11 16:14:29,192 - src.envs.lava_corridor - INFO -   Agent 0: position=(0, 1), obs_idx=4
+2025-12-11 16:14:29,192 - src.envs.lava_corridor - INFO -   Agent 1: position=(0, 1), obs_idx=4
+2025-12-11 16:14:29,203 - __main__ - INFO -   \u2713 Environment reset
+2025-12-11 16:14:29,203 - __main__ - INFO -     State keys: ['env_state', 'timestep', 'done']
+2025-12-11 16:14:29,204 - __main__ - INFO -     Obs keys: [0, 1]
+2025-12-11 16:14:29,204 - __main__ - INFO -     Agent 0 obs: {'location_obs': Array([4], dtype=int32)}
+2025-12-11 16:14:29,204 - __main__ - INFO -     Agent 1 obs: {'location_obs': Array([4], dtype=int32)}
+2025-12-11 16:14:29,204 - src.envs.lava_corridor - WARNING -   COLLISION: Both agents at (1, 1)!
+2025-12-11 16:14:29,206 - __main__ - INFO -   \u2713 Environment step
+2025-12-11 16:14:29,206 - __main__ - INFO -     Done: False
+2025-12-11 16:14:29,206 - __main__ - INFO -     Timestep: 1
+2025-12-11 16:14:29,206 - __main__ - INFO - 
+\u2705 TOM environment interaction successful!
+
+2025-12-11 16:14:29,206 - __main__ - INFO - ================================================================================
+2025-12-11 16:14:29,206 - __main__ - INFO - STEP 4: Testing TOM agent inference...
+2025-12-11 16:14:29,206 - __main__ - INFO - ================================================================================
+2025-12-11 16:14:29,213 - src.envs.lava_corridor - INFO - LavaCorridorConfig: width=4, num_agents=1, slip_prob=0.0
+2025-12-11 16:14:29,213 - src.envs.lava_corridor - INFO -   Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 16:14:29,213 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:14:29,213 - src.envs.lava_corridor - INFO - Lava Corridor Environment Initialized
+2025-12-11 16:14:29,213 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:14:29,213 - src.envs.lava_corridor - INFO - Grid: 4x3 (width x height)
+2025-12-11 16:14:29,213 - src.envs.lava_corridor - INFO - Safe row: y=1
+2025-12-11 16:14:29,213 - src.envs.lava_corridor - INFO - Goal: x=3, y=1
+2025-12-11 16:14:29,213 - src.envs.lava_corridor - INFO - Num agents: 1
+2025-12-11 16:14:29,214 - src.envs.lava_corridor - INFO - Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 16:14:29,214 - src.envs.lava_corridor - INFO - Slip probability: 0.0
+2025-12-11 16:14:29,214 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 16:14:29,214 - src.envs.lava_corridor - INFO - Resetting environment
+2025-12-11 16:14:29,214 - src.envs.lava_corridor - INFO - Reset complete: t=0
+2025-12-11 16:14:29,214 - src.envs.lava_corridor - INFO -   Agent 0: position=(0, 1), obs_idx=4
+2025-12-11 16:14:29,214 - __main__ - INFO -   Agent observation: 4
+2025-12-11 16:14:29,216 - __main__ - INFO -   \u2713 Manual Bayesian inference complete
+2025-12-11 16:14:29,216 - __main__ - INFO -     Posterior qs shape: (12,)
+2025-12-11 16:14:29,216 - __main__ - INFO -     Posterior qs sum: 1.0000
+2025-12-11 16:14:29,217 - __main__ - INFO -     Posterior qs min=0.0000, max=1.0000
+2025-12-11 16:14:29,218 - __main__ - INFO -     Most likely state: 4
+2025-12-11 16:14:29,218 - __main__ - INFO -     Confidence: 1.0000
+2025-12-11 16:14:29,218 - __main__ - INFO - 
+\u2705 TOM agent inference (manual Bayes) successful!
+
+
+PASSED: TOM Smoke Test
+
+STEP 2: TOM Environment (LavaV1Env, LavaModel)...
+
+================================================================================
+TOM Environment
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 8 items
+
+tests/test_lava_env_tom.py::test_lava_model_creation PASSED              [ 12%]
+tests/test_lava_env_tom.py::test_lava_agent_creation PASSED              [ 25%]
+tests/test_lava_env_tom.py::test_lava_v1_env_reset PASSED                [ 37%]
+tests/test_lava_env_tom.py::test_lava_v1_env_step PASSED                 [ 50%]
+tests/test_lava_env_tom.py::test_lava_transitions PASSED                 [ 62%]
+tests/test_lava_env_tom.py::test_preferences_structure PASSED            [ 75%]
+tests/test_lava_env_tom.py::test_initial_state_prior PASSED              [ 87%]
+tests/test_lava_env_tom.py::test_collision_detection PASSED              [100%]
+
+============================== 8 passed in 1.18s ==============================
+
+PASSED: TOM Environment
+
+STEP 3: TOM Model Creation...
+
+================================================================================
+TOM Model Creation
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 25 items
+
+tests/test_model_creation_tom.py::TestLavaModelCreation::test_model_basic_creation PASSED [  4%]
+tests/test_model_creation_tom.py::TestLavaModelCreation::test_model_custom_goal PASSED [  8%]
+tests/test_model_creation_tom.py::TestLavaModelCreation::test_model_dict_structure PASSED [ 12%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_A_matrix_shape PASSED [ 16%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_B_matrix_shape PASSED [ 20%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_C_vector_shape PASSED [ 24%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_D_vector_shape PASSED [ 28%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_A_is_identity PASSED [ 32%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_B_valid_transitions PASSED [ 36%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_C_goal_positive_lava_negative PASSED [ 40%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_D_is_probability_distribution PASSED [ 44%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_stay_action_deterministic PASSED [ 48%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_right_action_moves_right PASSED [ 52%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_up_action_moves_up PASSED [ 56%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_boundary_handling PASSED [ 60%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_basic_creation PASSED [ 64%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_exposes_model_dicts PASSED [ 68%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_policy_shape PASSED [ 72%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_policies_are_valid_actions PASSED [ 76%]
+tests/test_model_creation_tom.py::TestModelConsistency::test_small_model PASSED [ 80%]
+tests/test_model_creation_tom.py::TestModelConsistency::test_large_model PASSED [ 84%]
+tests/test_model_creation_tom.py::TestModelConsistency::test_different_goals PASSED [ 88%]
+tests/test_model_creation_tom.py::TestVerticalMovement::test_down_movement_from_goal_below PASSED [ 92%]
+tests/test_model_creation_tom.py::TestVerticalMovement::test_up_movement_from_goal_above PASSED [ 96%]
+tests/test_model_creation_tom.py::TestVerticalMovement::test_diagonal_goal_allows_both_directions PASSED [100%]
+
+============================= 25 passed in 2.15s ==============================
+
+PASSED: TOM Model Creation
+
+STEP 4: TOM Integration...
+
+================================================================================
+TOM Integration
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 9 items
+
+tests/test_integration_tom.py::TestIntegrationBasic::test_create_all_components PASSED [ 11%]
+tests/test_integration_tom.py::TestIntegrationBasic::test_model_env_compatibility PASSED [ 22%]
+tests/test_integration_tom.py::TestManualInference::test_inference_from_env_observation PASSED [ 33%]
+tests/test_integration_tom.py::TestManualInference::test_belief_update_after_action PASSED [ 44%]
+tests/test_integration_tom.py::TestPolicyEvaluation::test_policy_forward_simulation PASSED [ 55%]
+tests/test_integration_tom.py::TestPolicyEvaluation::test_expected_outcome_distribution PASSED [ 66%]
+tests/test_integration_tom.py::TestMultiAgentInteraction::test_two_agent_env PASSED [ 77%]
+tests/test_integration_tom.py::TestMultiAgentInteraction::test_two_agent_separate_beliefs PASSED [ 88%]
+tests/test_integration_tom.py::TestEndToEndScenario::test_full_pipeline PASSED [100%]
+
+============================== 9 passed in 1.82s ==============================
+
+PASSED: TOM Integration
+
+STEP 5: LavaV2Env Layout Variants...
+
+================================================================================
+LavaV2Env Variants
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 14 items
+
+tests/test_lava_v2_env.py::TestLayoutCreation::test_narrow_layout PASSED [  7%]
+tests/test_lava_v2_env.py::TestLayoutCreation::test_wide_layout PASSED   [ 14%]
+tests/test_lava_v2_env.py::TestLayoutCreation::test_bottleneck_layout PASSED [ 21%]
+tests/test_lava_v2_env.py::TestLayoutCreation::test_risk_reward_layout PASSED [ 28%]
+tests/test_lava_v2_env.py::TestLavaV2EnvCreation::test_create_wide_env PASSED [ 35%]
+tests/test_lava_v2_env.py::TestLavaV2EnvCreation::test_create_bottleneck_env PASSED [ 42%]
+tests/test_lava_v2_env.py::TestExtendedObservations::test_observation_structure PASSED [ 50%]
+tests/test_lava_v2_env.py::TestExtendedObservations::test_symmetric_observations PASSED [ 57%]
+tests/test_lava_v2_env.py::TestDifferentStartPositions::test_wide_different_starts PASSED [ 64%]
+tests/test_lava_v2_env.py::TestDifferentStartPositions::test_narrow_same_x_different_y PASSED [ 71%]
+tests/test_lava_v2_env.py::TestCollisionDetection::test_collision_when_same_position PASSED [ 78%]
+tests/test_lava_v2_env.py::TestCollisionDetection::test_no_collision_different_positions PASSED [ 85%]
+tests/test_lava_v2_env.py::TestGoalReaching::test_goal_detection PASSED  [ 92%]
+tests/test_lava_v2_env.py::TestRendering::test_render_initial_state PASSED [100%]
+
+============================= 14 passed in 0.63s ==============================
+
+PASSED: LavaV2Env Variants
+
+STEP 6: Path Flexibility Metrics (E, R, O, F)...
+
+================================================================================
+Path Flexibility Metrics
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 10 items
+
+tests/test_path_flexibility_metrics.py::TestEmpowerment::test_empowerment_branching_vs_dead_end PASSED [ 10%]
+tests/test_path_flexibility_metrics.py::TestEmpowerment::test_empowerment_decreases_along_chain PASSED [ 20%]
+tests/test_path_flexibility_metrics.py::TestReturnability::test_returnability_shared_outcomes PASSED [ 30%]
+tests/test_path_flexibility_metrics.py::TestReturnability::test_returnability_increases_with_horizon PASSED [ 40%]
+tests/test_path_flexibility_metrics.py::TestOverlap::test_overlap_identical_policies PASSED [ 50%]
+tests/test_path_flexibility_metrics.py::TestOverlap::test_overlap_diverging_policies PASSED [ 60%]
+tests/test_path_flexibility_metrics.py::TestPathFlexibility::test_flexibility_composition PASSED [ 70%]
+tests/test_path_flexibility_metrics.py::TestPathFlexibility::test_flexibility_weights PASSED [ 80%]
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_single_state_model PASSED [ 90%]
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_zero_horizon PASSED [100%]
+
+============================== warnings summary ===============================
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_zero_horizon
+  C:\Users\mahau\anaconda3\envs\alignment\lib\site-packages\numpy\core\fromnumeric.py:3504: RuntimeWarning: Mean of empty slice.
+    return _methods._mean(a, axis=axis, dtype=dtype,
+
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_zero_horizon
+  C:\Users\mahau\anaconda3\envs\alignment\lib\site-packages\numpy\core\_methods.py:129: RuntimeWarning: invalid value encountered in scalar divide
+    ret = ret.dtype.type(ret / rcount)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 10 passed, 2 warnings in 0.40s ========================
+
+PASSED: Path Flexibility Metrics
+
+STEP 7: F-Aware Policy Prior...
+
+================================================================================
+F-Aware Prior
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 8 items
+
+tests/test_F_aware_prior.py::TestFAwarePriorBaseline::test_kappa_zero_equals_baseline PASSED [ 12%]
+tests/test_F_aware_prior.py::TestFAwarePriorBiasing::test_kappa_positive_biases_toward_high_F PASSED [ 25%]
+tests/test_F_aware_prior.py::TestFAwarePriorBiasing::test_kappa_strength PASSED [ 37%]
+tests/test_F_aware_prior.py::TestJointFlexibilityWeighting::test_beta_weighting PASSED [ 50%]
+tests/test_F_aware_prior.py::TestEFEAndFlexibilityTradeoff::test_EFE_dominates_when_kappa_small PASSED [ 62%]
+tests/test_F_aware_prior.py::TestEFEAndFlexibilityTradeoff::test_flexibility_can_overcome_EFE_when_kappa_large PASSED [ 75%]
+tests/test_F_aware_prior.py::TestNumericalStability::test_large_gamma_values PASSED [ 87%]
+tests/test_F_aware_prior.py::TestNumericalStability::test_extreme_flexibility_differences PASSED [100%]
+
+============================== 8 passed in 1.15s ==============================
+
+PASSED: F-Aware Prior
+
+STEP 8: JAX Path Flexibility Correctness...
+
+================================================================================
+JAX Path Flexibility
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 7 items
+
+tests/test_jax_correctness.py::test_empowerment_one_step PASSED          [ 14%]
+tests/test_jax_correctness.py::test_rollout_beliefs_and_obs FAILED       [ 28%]
+tests/test_jax_correctness.py::test_empowerment_along_rollout FAILED     [ 42%]
+tests/test_jax_correctness.py::test_returnability FAILED                 [ 57%]
+tests/test_jax_correctness.py::test_overlap FAILED                       [ 71%]
+tests/test_jax_correctness.py::test_full_flexibility_computation FAILED  [ 85%]
+tests/test_jax_correctness.py::test_jax_faster_than_numpy FAILED         [100%]
+
+================================== FAILURES ===================================
+________________________ test_rollout_beliefs_and_obs _________________________
+
+lava_model_h3 = <test_jax_correctness.CompatibleModel object at 0x000001CCB09CEDD0>
+
+    def test_rollout_beliefs_and_obs(lava_model_h3):
+        """Test that JAX belief rollout matches NumPy."""
+        model = lava_model_h3
+        policy_id = 0
+    
+        # NumPy rollout (uses CompatibleModel with list-style API)
+>       q_s_numpy, p_o_numpy = rollout_beliefs_and_obs(policy_id, model, model.horizon)
+
+tests\test_jax_correctness.py:125: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\metrics\path_flexibility.py:560: in rollout_beliefs_and_obs
+    a_t = get_policy_action(policy_id, t, policy_library)
+src\metrics\path_flexibility.py:493: in get_policy_action
+    return int(policy[t] if t < len(policy) else policy[-1])
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\array.py:302: in __int__
+    core.check_scalar_conversion(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+arr = Array([0], dtype=int32)
+
+    def check_scalar_conversion(arr: Array):
+      if arr.ndim > 0:
+>       raise TypeError("Only scalar arrays can be converted to Python scalars; "
+                        f"got {arr.ndim=}")
+E       TypeError: Only scalar arrays can be converted to Python scalars; got arr.ndim=1
+
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\core.py:641: TypeError
+_______________________ test_empowerment_along_rollout ________________________
+
+lava_model_h3 = <test_jax_correctness.CompatibleModel object at 0x000001CCB2DEBC40>
+
+    def test_empowerment_along_rollout(lava_model_h3):
+        """Test that JAX empowerment along rollout matches NumPy."""
+        model = lava_model_h3
+        policy_id = 0
+    
+        # NumPy computation
+>       E_numpy = compute_empowerment_along_rollout(model, policy_id, model.horizon)
+
+tests\test_jax_correctness.py:156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\metrics\path_flexibility.py:837: in compute_empowerment_along_rollout
+    q_s_over_time, _ = rollout_beliefs_and_obs(policy_id, agent_model, horizon, current_qs)
+src\metrics\path_flexibility.py:560: in rollout_beliefs_and_obs
+    a_t = get_policy_action(policy_id, t, policy_library)
+src\metrics\path_flexibility.py:493: in get_policy_action
+    return int(policy[t] if t < len(policy) else policy[-1])
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\array.py:302: in __int__
+    core.check_scalar_conversion(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+arr = Array([0], dtype=int32)
+
+    def check_scalar_conversion(arr: Array):
+      if arr.ndim > 0:
+>       raise TypeError("Only scalar arrays can be converted to Python scalars; "
+                        f"got {arr.ndim=}")
+E       TypeError: Only scalar arrays can be converted to Python scalars; got arr.ndim=1
+
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\core.py:641: TypeError
+_____________________________ test_returnability ______________________________
+
+lava_model_h3 = <test_jax_correctness.CompatibleModel object at 0x000001CCB0A0BCD0>
+
+    def test_returnability(lava_model_h3):
+        """Test that JAX returnability matches NumPy."""
+        model = lava_model_h3
+        policy_id = 0
+    
+        # Get observation distributions over time
+>       _, p_o_numpy = rollout_beliefs_and_obs(policy_id, model, model.horizon)
+
+tests\test_jax_correctness.py:182: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\metrics\path_flexibility.py:560: in rollout_beliefs_and_obs
+    a_t = get_policy_action(policy_id, t, policy_library)
+src\metrics\path_flexibility.py:493: in get_policy_action
+    return int(policy[t] if t < len(policy) else policy[-1])
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\array.py:302: in __int__
+    core.check_scalar_conversion(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+arr = Array([0], dtype=int32)
+
+    def check_scalar_conversion(arr: Array):
+      if arr.ndim > 0:
+>       raise TypeError("Only scalar arrays can be converted to Python scalars; "
+                        f"got {arr.ndim=}")
+E       TypeError: Only scalar arrays can be converted to Python scalars; got arr.ndim=1
+
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\core.py:641: TypeError
+________________________________ test_overlap _________________________________
+
+lava_model_h3 = <test_jax_correctness.CompatibleModel object at 0x000001CCB2CCF550>
+
+    def test_overlap(lava_model_h3):
+        """Test that JAX overlap matches NumPy."""
+        model = lava_model_h3
+        policy_id = 0
+    
+        # Get observation distributions for two "agents" (using same policy for simplicity)
+>       _, p_o_i_numpy = rollout_beliefs_and_obs(policy_id, model, model.horizon)
+
+tests\test_jax_correctness.py:205: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\metrics\path_flexibility.py:560: in rollout_beliefs_and_obs
+    a_t = get_policy_action(policy_id, t, policy_library)
+src\metrics\path_flexibility.py:493: in get_policy_action
+    return int(policy[t] if t < len(policy) else policy[-1])
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\array.py:302: in __int__
+    core.check_scalar_conversion(self)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+arr = Array([0], dtype=int32)
+
+    def check_scalar_conversion(arr: Array):
+      if arr.ndim > 0:
+>       raise TypeError("Only scalar arrays can be converted to Python scalars; "
+                        f"got {arr.ndim=}")
+E       TypeError: Only scalar arrays can be converted to Python scalars; got arr.ndim=1
+
+..\..\..\..\anaconda3\envs\alignment\lib\site-packages\jax\_src\core.py:641: TypeError
+______________________ test_full_flexibility_computation ______________________
+
+lava_model_h3 = <test_jax_correctness.CompatibleModel object at 0x000001CCB09CEDD0>
+
+    def test_full_flexibility_computation(lava_model_h3):
+        """
+        Test that full F computation (all policies) matches between JAX and NumPy.
+    
+        This is the most important integration test.
+        """
+        model = lava_model_h3
+    
+        # Parameters
+        shared_outcome_set = list(range(7))
+        lambdas = (1.0, 1.0, 1.0)
+        num_test_policies = 10  # Test subset for speed
+    
+        # Get policy IDs
+        policy_ids = list(range(num_test_policies))
+    
+        # NumPy computation
+        from src.metrics.path_flexibility import compute_F_arrays_for_policies
+    
+        class MockModel:
+            def __init__(self, A, B, D, policies):
+                self.A = [A]
+                self.B = [B]
+                self.D = [D]
+                self.policies = policies
+    
+>       A_np = np.array(model.A["location_obs"])
+E       TypeError: list indices must be integers or slices, not str
+
+tests\test_jax_correctness.py:247: TypeError
+_________________________ test_jax_faster_than_numpy __________________________
+
+lava_model_h3 = <test_jax_correctness.CompatibleModel object at 0x000001CCB2FD78B0>
+
+    def test_jax_faster_than_numpy(lava_model_h3):
+        """
+        Sanity check that JAX is actually faster than NumPy.
+    
+        This test may be skipped in CI/CD environments without GPU.
+        """
+        import time
+    
+        model = lava_model_h3
+        shared_outcome_set = list(range(7))
+        lambdas = (1.0, 1.0, 1.0)
+        num_test_policies = 25  # 25 policies for timing
+    
+        # Prepare data
+>       A_np = np.array(model.A["location_obs"])
+E       TypeError: list indices must be integers or slices, not str
+
+tests\test_jax_correctness.py:310: TypeError
+=========================== short test summary info ===========================
+FAILED tests/test_jax_correctness.py::test_rollout_beliefs_and_obs - TypeErro...
+FAILED tests/test_jax_correctness.py::test_empowerment_along_rollout - TypeEr...
+FAILED tests/test_jax_correctness.py::test_returnability - TypeError: Only sc...
+FAILED tests/test_jax_correctness.py::test_overlap - TypeError: Only scalar a...
+FAILED tests/test_jax_correctness.py::test_full_flexibility_computation - Typ...
+FAILED tests/test_jax_correctness.py::test_jax_faster_than_numpy - TypeError:...
+========================= 6 failed, 1 passed in 2.32s =========================
+
+FAILED: JAX Path Flexibility
+
+STEP 9: JAX Empathy Rollout Correctness...
+
+================================================================================
+JAX Empathy Rollout
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 5 items
+
+tests/test_jax_empathy.py::test_propagate_belief_3d PASSED               [ 20%]
+tests/test_jax_empathy.py::test_propagate_belief_4d PASSED               [ 40%]
+tests/test_jax_empathy.py::test_epistemic_info_gain PASSED               [ 60%]
+tests/test_jax_empathy.py::test_full_empathic_G_horizon1 SKIPPED (Fu...) [ 80%]
+tests/test_jax_empathy.py::test_full_empathic_G_horizon3 SKIPPED (Fu...) [100%]
+
+======================== 3 passed, 2 skipped in 1.28s =========================
+
+PASSED: JAX Empathy Rollout
+
+STEP 10: 4D B Matrix and Multi-Step ToM...
+
+================================================================================
+4D B Matrix
+================================================================================
+
+============================================================
+Testing 4D B Matrix and Multi-Step ToM Planning
+============================================================
+
+============================================================
+TEST 1: B Matrix 4D Structure
+============================================================
+
+B matrix shape: (12, 12, 12, 5)
+Expected: (num_states, num_states, num_states, num_actions)
+Got: (12, 12, 12, 5)
+
+Agent at state 4 (0,1), other at state 5 (1,1)
+Agent tries RIGHT (action 3)
+Move to 5: 1.00
+NOTE: In Regime B, collisions are possible (handled via preferences)
+
+[PASS] B matrix has correct 4D structure
+
+============================================================
+TEST 2: Empathy Conditioning on Other Agent
+============================================================
+
+Agent i at (0,1), agent j at (1,1)
+Agent i wants to go RIGHT toward goal
+But j is blocking the path
+
+G_i (selfish EFE): [100.  100.    6.1 104.1   6.1]
+G_j (simulated other): [2.1 2.1 2.1 2.1 2.1]
+G_social (empathic): [101.05      101.05        7.1499996 105.15        7.1499996]
+
+Chosen action: LEFT
+
+Action EFE breakdown:
+  UP: G_i=100.00, G_social=101.05
+  DOWN: G_i=100.00, G_social=101.05
+  LEFT: G_i=6.10, G_social=7.15
+  RIGHT: G_i=104.10, G_social=105.15
+  STAY: G_i=6.10, G_social=7.15
+
+[PASS] Empathy planner considers other agent's position
+
+============================================================
+TEST 3: Multi-Step Horizon Planning
+============================================================
+
+Horizon: 3
+Agent i policies shape: (125, 3, 1)
+Expected: (num_policies, 3, 1)
+
+Number of policies: 125
+
+Planning with horizon=3...
+Chosen action: RIGHT
+Planning successful!
+
+[PASS] Multi-step horizon planning works
+
+============================================================
+ALL TESTS PASSED
+============================================================
+
+PASSED: 4D B Matrix
+
+STEP 11: JAX Planner Speedup Verification...
+
+================================================================================
+JAX Planner Speedup
+================================================================================
+================================================================================
+JAX-ENABLED EMPATHIC PLANNER TEST
+================================================================================
+
+Creating test models (horizon=3, 5^3=125 policies)...
+[OK] Models created
+  - Agent i: 21 states, 125 policies
+  - Agent j: 21 states, 125 policies
+
+================================================================================
+TEST 1: NumPy Planner (use_jax=False)
+================================================================================
+  Running NumPy planner...
+  [OK] Completed in 22.269s
+    - G_i range: [8.10, 100.00]
+    - G_social range: [12.48, 104.05]
+    - Selected action: 3
+
+================================================================================
+TEST 2: JAX Planner (use_jax=True)
+================================================================================
+  Warming up JAX (JIT compilation)...
+  [OK] JIT compilation complete
+  Running JAX planner...
+  [OK] Completed in 0.054s
+    - G_i range: [8.10, 100.00]
+    - G_social range: [12.48, 104.05]
+    - Selected action: 3
+
+================================================================================
+CORRECTNESS CHECK
+================================================================================
+  Max difference in G_i: 6.99e-06
+  Max difference in G_j: 3.18e-07
+  Max difference in G_social: 9.93e-06
+  Max difference in q_pi: 6.05e-08
+  Actions match: True
+
+  [PASS] RESULTS MATCH (tolerance=0.001)
+
+================================================================================
+PERFORMANCE COMPARISON
+================================================================================
+  NumPy time: 22.269s
+  JAX time:   0.054s
+  Speedup:    413.8x
+
+  EXCELLENT SPEEDUP! JAX is 413.8x faster
+
+================================================================================
+EXPLORE-EXPLOIT VERIFICATION
+================================================================================
+  Both planners use epistemic_scale=1.0
+  This controls exploration:
+    - epistemic_scale=0 -> pure exploitation (goal-seeking only)
+    - epistemic_scale=1 -> full exploration (information-seeking)
+
+  [PASS] Explore-exploit balance PRESERVED in JAX version
+
+================================================================================
+TEST COMPLETE
+================================================================================
+
+[PASS] JAX-enabled EmpathicLavaPlanner is working correctly!
+[PASS] Results are numerically identical (within 0.001)
+[PASS] Speedup: 413.8x for horizon=3
+
+TIP: To disable JAX, use: EmpathicLavaPlanner(..., use_jax=False)
+TIP: To use in experiments, just import normally - JAX is now the default!
+
+PASSED: JAX Planner Speedup
+
+================================================================================
+                            SUMMARY
+================================================================================
+FAILED: 1/11 tests
+PASSED: 10/11 tests
+
+Failed tests:
+  - test_jax_correctness.py
+================================================================================
+
+Test run completed: 2025-12-11 16:15:17
+Log saved to: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\results\test_logs\test_run_20251211_161425.log
+

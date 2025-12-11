@@ -115,12 +115,15 @@ class TestManualInference:
         # Initial observation and belief
         obs_0 = int(np.asarray(obs[0]["location_obs"])[0])
         A = np.asarray(model.A["location_obs"])
-        B = np.asarray(model.B["location_state"])
+        B = np.asarray(model.B["location_state"])  # 4D: (s', s, s_other, a)
         D = np.asarray(model.D["location_state"])
 
         # Initial belief
         qs_0 = A[obs_0] * D
         qs_0 = qs_0 / qs_0.sum()
+
+        # For single-agent, marginalize over s_other (uniform)
+        qs_other = np.ones(model.num_states) / model.num_states
 
         # Take action RIGHT
         RIGHT = 3
@@ -129,8 +132,10 @@ class TestManualInference:
         # New observation
         obs_1 = int(np.asarray(next_obs[0]["location_obs"])[0])
 
-        # Predicted belief (using B)
-        qs_pred = (B[:, :, RIGHT] @ qs_0)
+        # Predicted belief (using 4D B matrix - marginalize over s_other)
+        qs_pred = np.zeros(model.num_states)
+        for s_other in range(model.num_states):
+            qs_pred += B[:, :, s_other, RIGHT] @ qs_0 * qs_other[s_other]
 
         # Updated belief (using new observation)
         qs_1 = A[obs_1] * qs_pred
@@ -158,17 +163,23 @@ class TestPolicyEvaluation:
         qs = np.zeros(model.num_states)
         qs[s0] = 1.0
 
+        # For single-agent, marginalize over s_other (uniform)
+        qs_other = np.ones(model.num_states) / model.num_states
+
         # Policy: [RIGHT, RIGHT] - move right twice
         policy = [3, 3]
-        B = np.asarray(model.B["location_state"])
+        B = np.asarray(model.B["location_state"])  # 4D: (s', s, s_other, a)
 
         # Simulate forward
         qs_t = qs.copy()
         trajectory = [s0]
 
         for action in policy:
-            # Predict next state
-            qs_t = B[:, :, action] @ qs_t
+            # Predict next state (marginalize over s_other)
+            qs_next = np.zeros(model.num_states)
+            for s_other in range(model.num_states):
+                qs_next += B[:, :, s_other, action] @ qs_t * qs_other[s_other]
+            qs_t = qs_next
             s_t = qs_t.argmax()
             trajectory.append(s_t)
 
@@ -185,11 +196,14 @@ class TestPolicyEvaluation:
         """Test computing expected outcome distribution over a policy."""
         model = LavaModel(width=4, height=3)
         A = np.asarray(model.A["location_obs"])
-        B = np.asarray(model.B["location_state"])
+        B = np.asarray(model.B["location_state"])  # 4D: (s', s, s_other, a)
         D = np.asarray(model.D["location_state"])
 
         # Start belief
         qs = D.copy()
+
+        # For single-agent, marginalize over s_other (uniform)
+        qs_other = np.ones(model.num_states) / model.num_states
 
         # Policy: STAY for 3 steps
         policy = [4, 4, 4]
@@ -199,8 +213,11 @@ class TestPolicyEvaluation:
 
         qs_t = qs.copy()
         for action in policy:
-            # Predict next belief
-            qs_t = B[:, :, action] @ qs_t
+            # Predict next belief (marginalize over s_other)
+            qs_next = np.zeros(model.num_states)
+            for s_other in range(model.num_states):
+                qs_next += B[:, :, s_other, action] @ qs_t * qs_other[s_other]
+            qs_t = qs_next
 
             # Compute observation distribution
             obs_dist = A @ qs_t
@@ -310,16 +327,21 @@ class TestEndToEndScenario:
         qs = A[obs_t] * D
         qs = qs / qs.sum()
 
+        # For single-agent, marginalize over s_other (uniform)
+        qs_other = np.ones(model.num_states) / model.num_states
+
         # 5. Evaluate policies (simple: just count expected reward)
-        B = np.asarray(model.B["location_state"])
+        B = np.asarray(model.B["location_state"])  # 4D: (s', s, s_other, a)
         C = np.asarray(model.C["location_obs"])
 
         policy_values = []
         for policy_idx in range(len(agent.policies)):
             action = int(agent.policies[policy_idx, 0, 0])
 
-            # Predict next state
-            qs_next = B[:, :, action] @ qs
+            # Predict next state (marginalize over s_other)
+            qs_next = np.zeros(model.num_states)
+            for s_other in range(model.num_states):
+                qs_next += B[:, :, s_other, action] @ qs * qs_other[s_other]
 
             # Expected observation
             obs_dist = A @ qs_next

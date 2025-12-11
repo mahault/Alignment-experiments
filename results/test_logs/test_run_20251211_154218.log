@@ -1,0 +1,1407 @@
+
+Test run started: 2025-12-11 15:42:18
+Log file: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\results\test_logs\test_run_20251211_154218.log
+
+
+================================================================================
+          RUNNING FULL TEST SUITE
+================================================================================
+
+STEP 1: TOM Infrastructure Smoke Test...
+
+================================================================================
+TOM Smoke Test
+================================================================================
+
+================================================================================
+                    TOM LAVA CORRIDOR SMOKE TEST
+================================================================================
+
+
+================================================================================
+                              SUMMARY
+================================================================================
+  TOM Imports....................................... [PASS]
+  TOM Model Creation................................ [PASS]
+  TOM Environment................................... [PASS]
+  TOM Agent Inference............................... [PASS]
+================================================================================
+
+ALL TOM TESTS PASSED! LavaCorridor TOM system is ready.
+
+Next steps:
+  1. Run multi-agent TOM rollout
+  2. Test ToMify for recursive inference
+  3. Run experiments with path flexibility metrics
+
+2025-12-11 15:42:19,070 - __main__ - INFO - ================================================================================
+2025-12-11 15:42:19,070 - __main__ - INFO - STEP 1: Testing TOM imports...
+2025-12-11 15:42:19,070 - __main__ - INFO - ================================================================================
+2025-12-11 15:42:19,086 - __main__ - INFO -   \u2713 TOM model imports
+2025-12-11 15:42:19,086 - __main__ - INFO -   \u2713 TOM env imports
+2025-12-11 15:42:19,504 - __main__ - INFO -   \u2713 TOM planning imports
+2025-12-11 15:42:19,504 - __main__ - INFO - 
+\u2705 All TOM imports successful!
+
+2025-12-11 15:42:19,504 - __main__ - INFO - ================================================================================
+2025-12-11 15:42:19,504 - __main__ - INFO - STEP 2: Testing TOM model creation...
+2025-12-11 15:42:19,504 - __main__ - INFO - ================================================================================
+INFO:2025-12-11 15:42:19,546:jax._src.xla_bridge:927: Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+2025-12-11 15:42:19,546 - jax._src.xla_bridge - INFO - Unable to initialize backend 'rocm': module 'jaxlib.xla_extension' has no attribute 'GpuAllocatorConfig'
+INFO:2025-12-11 15:42:19,546:jax._src.xla_bridge:927: Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
+2025-12-11 15:42:19,546 - jax._src.xla_bridge - INFO - Unable to initialize backend 'tpu': UNIMPLEMENTED: LoadPjrtPlugin is not implemented on windows yet.
+2025-12-11 15:42:20,116 - __main__ - INFO -   \u2713 LavaModel created
+2025-12-11 15:42:20,116 - __main__ - INFO -     A keys: ['location_obs', 'edge_obs', 'cell_collision_obs', 'edge_collision_obs']
+2025-12-11 15:42:20,116 - __main__ - INFO -     B keys: ['location_state']
+2025-12-11 15:42:20,116 - __main__ - INFO -     C keys: ['location_obs', 'edge_obs', 'cell_collision_obs', 'edge_collision_obs']
+2025-12-11 15:42:20,116 - __main__ - INFO -     D keys: ['location_state']
+2025-12-11 15:42:20,210 - __main__ - INFO -   \u2713 LavaAgent created
+2025-12-11 15:42:20,210 - __main__ - INFO -     Num policies: 5
+2025-12-11 15:42:20,210 - __main__ - INFO -     Policy shape: (5, 1, 1)
+2025-12-11 15:42:20,210 - __main__ - INFO -     A shape: (12, 12)
+2025-12-11 15:42:20,210 - __main__ - INFO -     B shape: (12, 12, 12, 5)
+2025-12-11 15:42:20,210 - __main__ - INFO -     C shape: (12,)
+2025-12-11 15:42:20,210 - __main__ - INFO -     D shape: (12,)
+2025-12-11 15:42:20,210 - __main__ - INFO - 
+\u2705 TOM model creation successful!
+
+2025-12-11 15:42:20,210 - __main__ - INFO - ================================================================================
+2025-12-11 15:42:20,210 - __main__ - INFO - STEP 3: Testing TOM environment interaction...
+2025-12-11 15:42:20,210 - __main__ - INFO - ================================================================================
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - LavaCorridorConfig: width=4, num_agents=2, slip_prob=0.0
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO -   Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - Lava Corridor Environment Initialized
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - Grid: 4x3 (width x height)
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - Safe row: y=1
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - Goal: x=3, y=1
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - Num agents: 2
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - Slip probability: 0.0
+2025-12-11 15:42:20,210 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 15:42:20,210 - __main__ - INFO -   \u2713 LavaV1Env created
+2025-12-11 15:42:20,210 - __main__ - INFO -     Grid: 4x3
+2025-12-11 15:42:20,210 - __main__ - INFO -     Num agents: 2
+2025-12-11 15:42:20,233 - src.envs.lava_corridor - INFO - Resetting environment
+2025-12-11 15:42:20,233 - src.envs.lava_corridor - INFO - Reset complete: t=0
+2025-12-11 15:42:20,233 - src.envs.lava_corridor - INFO -   Agent 0: position=(0, 1), obs_idx=4
+2025-12-11 15:42:20,233 - src.envs.lava_corridor - INFO -   Agent 1: position=(0, 1), obs_idx=4
+2025-12-11 15:42:20,243 - __main__ - INFO -   \u2713 Environment reset
+2025-12-11 15:42:20,243 - __main__ - INFO -     State keys: ['env_state', 'timestep', 'done']
+2025-12-11 15:42:20,243 - __main__ - INFO -     Obs keys: [0, 1]
+2025-12-11 15:42:20,244 - __main__ - INFO -     Agent 0 obs: {'location_obs': Array([4], dtype=int32)}
+2025-12-11 15:42:20,244 - __main__ - INFO -     Agent 1 obs: {'location_obs': Array([4], dtype=int32)}
+2025-12-11 15:42:20,244 - src.envs.lava_corridor - WARNING -   COLLISION: Both agents at (1, 1)!
+2025-12-11 15:42:20,244 - __main__ - INFO -   \u2713 Environment step
+2025-12-11 15:42:20,244 - __main__ - INFO -     Done: False
+2025-12-11 15:42:20,244 - __main__ - INFO -     Timestep: 1
+2025-12-11 15:42:20,245 - __main__ - INFO - 
+\u2705 TOM environment interaction successful!
+
+2025-12-11 15:42:20,245 - __main__ - INFO - ================================================================================
+2025-12-11 15:42:20,245 - __main__ - INFO - STEP 4: Testing TOM agent inference...
+2025-12-11 15:42:20,245 - __main__ - INFO - ================================================================================
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - LavaCorridorConfig: width=4, num_agents=1, slip_prob=0.0
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO -   Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - Lava Corridor Environment Initialized
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - Grid: 4x3 (width x height)
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - Safe row: y=1
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - Goal: x=3, y=1
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - Num agents: 1
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - Start positions: {0: (0, 1), 1: (0, 1)}
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - Slip probability: 0.0
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - ================================================================================
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - Resetting environment
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO - Reset complete: t=0
+2025-12-11 15:42:20,250 - src.envs.lava_corridor - INFO -   Agent 0: position=(0, 1), obs_idx=4
+2025-12-11 15:42:20,250 - __main__ - INFO -   Agent observation: 4
+2025-12-11 15:42:20,250 - __main__ - INFO -   \u2713 Manual Bayesian inference complete
+2025-12-11 15:42:20,250 - __main__ - INFO -     Posterior qs shape: (12,)
+2025-12-11 15:42:20,251 - __main__ - INFO -     Posterior qs sum: 1.0000
+2025-12-11 15:42:20,251 - __main__ - INFO -     Posterior qs min=0.0000, max=1.0000
+2025-12-11 15:42:20,252 - __main__ - INFO -     Most likely state: 4
+2025-12-11 15:42:20,252 - __main__ - INFO -     Confidence: 1.0000
+2025-12-11 15:42:20,252 - __main__ - INFO - 
+\u2705 TOM agent inference (manual Bayes) successful!
+
+
+PASSED: TOM Smoke Test
+
+STEP 2: TOM Environment (LavaV1Env, LavaModel)...
+
+================================================================================
+TOM Environment
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 8 items
+
+tests/test_lava_env_tom.py::test_lava_model_creation FAILED              [ 12%]
+tests/test_lava_env_tom.py::test_lava_agent_creation FAILED              [ 25%]
+tests/test_lava_env_tom.py::test_lava_v1_env_reset PASSED                [ 37%]
+tests/test_lava_env_tom.py::test_lava_v1_env_step PASSED                 [ 50%]
+tests/test_lava_env_tom.py::test_lava_transitions FAILED                 [ 62%]
+tests/test_lava_env_tom.py::test_preferences_structure PASSED            [ 75%]
+tests/test_lava_env_tom.py::test_initial_state_prior PASSED              [ 87%]
+tests/test_lava_env_tom.py::test_collision_detection PASSED              [100%]
+
+================================== FAILURES ===================================
+__________________________ test_lava_model_creation ___________________________
+
+    def test_lava_model_creation():
+        """Test LavaModel creation and structure."""
+        LOGGER.info("=" * 80)
+        LOGGER.info("TEST 1: LavaModel Creation")
+        LOGGER.info("=" * 80)
+    
+        model = LavaModel(width=4, height=3, goal_x=3)
+    
+        # Check A, B, C, D are dicts
+        assert isinstance(model.A, dict), "A should be dict"
+        assert isinstance(model.B, dict), "B should be dict"
+        assert isinstance(model.C, dict), "C should be dict"
+        assert isinstance(model.D, dict), "D should be dict"
+    
+        # Check keys
+        assert "location_obs" in model.A
+        assert "location_state" in model.B
+        assert "location_obs" in model.C
+        assert "location_state" in model.D
+    
+        # Check shapes
+        num_states = model.width * model.height
+        assert model.A["location_obs"].shape == (num_states, num_states)
+>       assert model.B["location_state"].shape == (num_states, num_states, 5)  # 5 actions
+E       AssertionError: assert (12, 12, 12, 5) == (12, 12, 5)
+E         
+E         At index 2 diff: 12 != 5
+E         Left contains one more item: 5
+E         
+E         Full diff:
+E           (
+E         +     12,...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests\test_lava_env_tom.py:58: AssertionError
+__________________________ test_lava_agent_creation ___________________________
+
+    def test_lava_agent_creation():
+        """Test LavaAgent creation and policy structure."""
+        LOGGER.info("=" * 80)
+        LOGGER.info("TEST 2: LavaAgent Creation")
+        LOGGER.info("=" * 80)
+    
+        model = LavaModel(width=4, height=3)
+        agent = LavaAgent(model, horizon=2, gamma=8.0)
+    
+        # Check agent exposes model dicts
+        assert agent.A is model.A, "Agent should expose model.A"
+        assert agent.B is model.B, "Agent should expose model.B"
+        assert agent.C is model.C, "Agent should expose model.C"
+        assert agent.D is model.D, "Agent should expose model.D"
+    
+        # Check policies
+>       assert agent.policies.shape == (5, 1, 1), "Should have (5, 1, 1) policies"
+E       AssertionError: Should have (5, 1, 1) policies
+E       assert (25, 2, 1) == (5, 1, 1)
+E         
+E         At index 0 diff: 25 != 5
+E         
+E         Full diff:
+E           (
+E         -     5,
+E         +     25,...
+E         
+E         ...Full output truncated (7 lines hidden), use '-vv' to show
+
+tests\test_lava_env_tom.py:86: AssertionError
+____________________________ test_lava_transitions ____________________________
+
+    def test_lava_transitions():
+        """Test that B matrix encodes correct lava transitions."""
+        LOGGER.info("=" * 80)
+        LOGGER.info("TEST 5: Lava Transition Dynamics")
+        LOGGER.info("=" * 80)
+    
+        model = LavaModel(width=4, height=3)
+        B = model.B["location_state"]  # (num_states, num_states, num_actions)
+    
+        # Test STAY action (action 4)
+        STAY = 4
+        for s in range(model.num_states):
+            # STAY should keep agent in same state
+            prob_stay = B[s, s, STAY]
+>           assert np.isclose(prob_stay, 1.0), f"STAY at state {s} should be deterministic"
+E           ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+
+tests\test_lava_env_tom.py:169: ValueError
+=========================== short test summary info ===========================
+FAILED tests/test_lava_env_tom.py::test_lava_model_creation - AssertionError:...
+FAILED tests/test_lava_env_tom.py::test_lava_agent_creation - AssertionError:...
+FAILED tests/test_lava_env_tom.py::test_lava_transitions - ValueError: The tr...
+========================= 3 failed, 5 passed in 0.98s =========================
+
+FAILED: TOM Environment
+
+STEP 3: TOM Model Creation...
+
+================================================================================
+TOM Model Creation
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 25 items
+
+tests/test_model_creation_tom.py::TestLavaModelCreation::test_model_basic_creation PASSED [  4%]
+tests/test_model_creation_tom.py::TestLavaModelCreation::test_model_custom_goal PASSED [  8%]
+tests/test_model_creation_tom.py::TestLavaModelCreation::test_model_dict_structure PASSED [ 12%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_A_matrix_shape PASSED [ 16%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_B_matrix_shape FAILED [ 20%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_C_vector_shape PASSED [ 24%]
+tests/test_model_creation_tom.py::TestMatrixShapes::test_D_vector_shape PASSED [ 28%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_A_is_identity PASSED [ 32%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_B_valid_transitions PASSED [ 36%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_C_goal_positive_lava_negative PASSED [ 40%]
+tests/test_model_creation_tom.py::TestMatrixProperties::test_D_is_probability_distribution PASSED [ 44%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_stay_action_deterministic FAILED [ 48%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_right_action_moves_right FAILED [ 52%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_up_action_moves_up FAILED [ 56%]
+tests/test_model_creation_tom.py::TestTransitionDynamics::test_boundary_handling FAILED [ 60%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_basic_creation PASSED [ 64%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_exposes_model_dicts PASSED [ 68%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_policy_shape PASSED [ 72%]
+tests/test_model_creation_tom.py::TestLavaAgentCreation::test_agent_policies_are_valid_actions PASSED [ 76%]
+tests/test_model_creation_tom.py::TestModelConsistency::test_small_model FAILED [ 80%]
+tests/test_model_creation_tom.py::TestModelConsistency::test_large_model FAILED [ 84%]
+tests/test_model_creation_tom.py::TestModelConsistency::test_different_goals PASSED [ 88%]
+tests/test_model_creation_tom.py::TestVerticalMovement::test_down_movement_from_goal_below FAILED [ 92%]
+tests/test_model_creation_tom.py::TestVerticalMovement::test_up_movement_from_goal_above FAILED [ 96%]
+tests/test_model_creation_tom.py::TestVerticalMovement::test_diagonal_goal_allows_both_directions FAILED [100%]
+
+================================== FAILURES ===================================
+____________________ TestMatrixShapes.test_B_matrix_shape _____________________
+
+self = <test_model_creation_tom.TestMatrixShapes object at 0x000001410430CC40>
+
+    def test_B_matrix_shape(self):
+        """Test transition matrix shape."""
+        model = LavaModel(width=4, height=3)
+        B = model.B["location_state"]
+    
+        num_states = model.num_states
+        num_actions = 5  # UP, DOWN, LEFT, RIGHT, STAY
+        expected_shape = (num_states, num_states, num_actions)
+    
+>       assert B.shape == expected_shape, f"B should be {expected_shape}"
+E       AssertionError: B should be (12, 12, 5)
+E       assert (12, 12, 12, 5) == (12, 12, 5)
+E         
+E         At index 2 diff: 12 != 5
+E         Left contains one more item: 5
+E         
+E         Full diff:
+E           (
+E         +     12,...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests\test_model_creation_tom.py:95: AssertionError
+____________ TestTransitionDynamics.test_stay_action_deterministic ____________
+
+self = <test_model_creation_tom.TestTransitionDynamics object at 0x000001410430C760>
+
+    def test_stay_action_deterministic(self):
+        """Test that STAY action keeps agent in same state."""
+        model = LavaModel(width=4, height=3)
+        B = np.asarray(model.B["location_state"])
+    
+        STAY = 4
+    
+        for s in range(model.num_states):
+            prob_stay = B[s, s, STAY]
+>           assert np.isclose(prob_stay, 1.0), \
+                f"STAY at state {s} should be deterministic (p=1.0)"
+E           ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+
+tests\test_model_creation_tom.py:204: ValueError
+____________ TestTransitionDynamics.test_right_action_moves_right _____________
+
+self = <test_model_creation_tom.TestTransitionDynamics object at 0x000001410430F6A0>
+
+    def test_right_action_moves_right(self):
+        """Test that RIGHT action moves agent right (when not at wall)."""
+        model = LavaModel(width=4, height=3)
+        B = np.asarray(model.B["location_state"])
+    
+        RIGHT = 3
+    
+        # State (y=1, x=0) should move to (y=1, x=1) with RIGHT
+        s_from = 1 * model.width + 0  # (1, 0)
+        s_to = 1 * model.width + 1    # (1, 1)
+    
+        prob_right = B[s_to, s_from, RIGHT]
+>       assert np.isclose(prob_right, 1.0), \
+            f"RIGHT from (1,0) should go to (1,1) with p=1.0"
+E       ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+
+tests\test_model_creation_tom.py:221: ValueError
+_______________ TestTransitionDynamics.test_up_action_moves_up ________________
+
+self = <test_model_creation_tom.TestTransitionDynamics object at 0x000001410430F970>
+
+    def test_up_action_moves_up(self):
+        """Test that UP action moves agent up (decreases y)."""
+        model = LavaModel(width=4, height=3)
+        B = np.asarray(model.B["location_state"])
+    
+        UP = 0
+    
+        # State (y=2, x=1) should move to (y=1, x=1) with UP
+        s_from = 2 * model.width + 1  # (2, 1)
+        s_to = 1 * model.width + 1    # (1, 1)
+    
+        prob_up = B[s_to, s_from, UP]
+>       assert np.isclose(prob_up, 1.0), \
+            f"UP from (2,1) should go to (1,1)"
+E       ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+
+tests\test_model_creation_tom.py:238: ValueError
+________________ TestTransitionDynamics.test_boundary_handling ________________
+
+self = <test_model_creation_tom.TestTransitionDynamics object at 0x000001410430FC40>
+
+    def test_boundary_handling(self):
+        """Test that actions at boundaries stay in place."""
+        model = LavaModel(width=4, height=3)
+        B = np.asarray(model.B["location_state"])
+    
+        RIGHT = 3
+    
+        # At right boundary (y=1, x=3), RIGHT should stay
+        s_boundary = 1 * model.width + 3  # (1, 3)
+    
+        prob_stay = B[s_boundary, s_boundary, RIGHT]
+>       assert np.isclose(prob_stay, 1.0), \
+            "RIGHT at right boundary should stay in place"
+E       ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+
+tests\test_model_creation_tom.py:254: ValueError
+____________________ TestModelConsistency.test_small_model ____________________
+
+self = <test_model_creation_tom.TestModelConsistency object at 0x000001410430F0D0>
+
+    def test_small_model(self):
+        """Test 3x3 grid."""
+        model = LavaModel(width=3, height=3)
+    
+        assert model.num_states == 9
+        assert model.A["location_obs"].shape == (9, 9)
+>       assert model.B["location_state"].shape == (9, 9, 5)
+E       AssertionError: assert (9, 9, 9, 5) == (9, 9, 5)
+E         
+E         At index 2 diff: 9 != 5
+E         Left contains one more item: 5
+E         
+E         Full diff:
+E           (
+E         +     9,...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests\test_model_creation_tom.py:337: AssertionError
+____________________ TestModelConsistency.test_large_model ____________________
+
+self = <test_model_creation_tom.TestModelConsistency object at 0x000001410430DDE0>
+
+    def test_large_model(self):
+        """Test 10x3 grid."""
+        model = LavaModel(width=10, height=3)
+    
+        assert model.num_states == 30
+        assert model.A["location_obs"].shape == (30, 30)
+>       assert model.B["location_state"].shape == (30, 30, 5)
+E       AssertionError: assert (30, 30, 30, 5) == (30, 30, 5)
+E         
+E         At index 2 diff: 30 != 5
+E         Left contains one more item: 5
+E         
+E         Full diff:
+E           (
+E         +     30,...
+E         
+E         ...Full output truncated (4 lines hidden), use '-vv' to show
+
+tests\test_model_creation_tom.py:347: AssertionError
+___________ TestVerticalMovement.test_down_movement_from_goal_below ___________
+
+self = <test_model_creation_tom.TestVerticalMovement object at 0x000001410430D5A0>
+
+    def test_down_movement_from_goal_below(self):
+        """
+        Test: Agent at (0,1) with goal at (0,2) should choose DOWN.
+    
+        This tests that:
+        1. DOWN action is properly encoded in B matrix
+        2. C preferences incentivize moving toward goal vertically
+        3. EFE computation correctly identifies DOWN as best action
+        """
+        from tom.planning.si_lava import compute_risk_G, LavaPlanner
+    
+        # Setup: goal directly below starting position
+        width, height = 3, 3
+        safe_cells = [(x, y) for x in range(width) for y in range(height)]  # All safe
+        start_pos = (0, 1)  # Middle row
+        goal_pos = (0, 2)   # Bottom row - requires DOWN
+    
+        model = LavaModel(
+            width=width,
+            height=height,
+            goal_x=goal_pos[0],
+            goal_y=goal_pos[1],
+            safe_cells=safe_cells,
+            start_pos=start_pos
+        )
+    
+        agent = LavaAgent(model, horizon=1, gamma=8.0)
+    
+        # Initial belief at starting position
+        qs = np.zeros(model.num_states)
+        start_idx = start_pos[1] * width + start_pos[0]
+        qs[start_idx] = 1.0
+    
+        # Compute EFE
+        B = np.asarray(model.B["location_state"])
+        C = np.asarray(model.C["location_obs"])
+        policies = np.asarray(agent.policies)
+    
+>       G = compute_risk_G(qs, B, C, policies)
+
+tests\test_model_creation_tom.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+qs = array([0., 0., 0., 1., 0., 0., 0., 0., 0.])
+B = array([[[[1., 0., 1., 0., 1.],
+         [1., 0., 1., 0., 1.],
+         [1., 0., 1., 0., 1.],
+         ...,
+         [1...    ...,
+         [0., 1., 0., 1., 1.],
+         [0., 1., 0., 1., 1.],
+         [0., 1., 0., 1., 1.]]]], dtype=float32)
+C = array([-4.1, -6.1, -8.1, -2.1, -4.1, -6.1, 50. , -2.1, -4.1],
+      dtype=float32)
+policies = array([[[0]],
+
+       [[1]],
+
+       [[2]],
+
+       [[3]],
+
+       [[4]]])
+A = array([[1., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 1., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 1., 0., 0., ...0., 0., 0., 0., 1., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 1., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 1.]])
+qs_other = None
+
+    def compute_risk_G(
+        qs: np.ndarray,
+        B: np.ndarray,
+        C: np.ndarray,
+        policies: np.ndarray,
+        A: Optional[np.ndarray] = None,
+        qs_other: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """
+        Compute risk-based Expected Free Energy for each policy.
+    
+        This is the "pragmatic value" component: expected utility under preferences C:
+            G(\u03c0) = -E_q(o|\u03c0)[ C(o) ]
+    
+        Parameters
+        ----------
+        qs : np.ndarray
+            Current belief state (num_states,)
+        B : np.ndarray
+            Transition model. Can be 3D or 4D (if conditioning on other agent).
+        C : np.ndarray
+            Preference vector over observations (num_obs,)
+        policies : np.ndarray
+            Policy set (num_policies, horizon, num_state_factors)
+        A : np.ndarray, optional
+            Observation model (num_obs, num_states). If None, assumes identity.
+        qs_other : np.ndarray, optional
+            Belief about other agent's position. Required if B is 4D.
+    
+        Returns
+        -------
+        G : np.ndarray
+            Risk-based EFE for each policy (num_policies,)
+        """
+        num_policies = len(policies)
+        num_states = len(qs)
+    
+        # Default to identity observation model if not provided
+        if A is None:
+            A = np.eye(num_states)
+    
+        G = np.zeros(num_policies)
+    
+        for pi_idx, policy in enumerate(policies):
+            # Policy shape: (horizon, num_state_factors)
+            # For lava: num_state_factors = 1, so squeeze
+            action_seq = policy[:, 0].astype(int)  # (horizon,)
+    
+            qs_t = qs.copy()
+            expected_utility = 0.0
+    
+            for action in action_seq:
+                # Predict next state (handles both 3D and 4D B)
+                if B.ndim == 3:
+                    qs_t = B[:, :, action] @ qs_t
+                elif B.ndim == 4:
+                    if qs_other is None:
+>                       raise ValueError("qs_other required for 4D B matrix")
+E                       ValueError: qs_other required for 4D B matrix
+
+tom\planning\si_lava.py:131: ValueError
+____________ TestVerticalMovement.test_up_movement_from_goal_above ____________
+
+self = <test_model_creation_tom.TestVerticalMovement object at 0x000001410430E740>
+
+    def test_up_movement_from_goal_above(self):
+        """Test: Agent at (0,1) with goal at (0,0) should choose UP."""
+        from tom.planning.si_lava import compute_risk_G
+    
+        width, height = 3, 3
+        safe_cells = [(x, y) for x in range(width) for y in range(height)]
+        start_pos = (0, 1)  # Middle row
+        goal_pos = (0, 0)   # Top row - requires UP
+    
+        model = LavaModel(
+            width=width,
+            height=height,
+            goal_x=goal_pos[0],
+            goal_y=goal_pos[1],
+            safe_cells=safe_cells,
+            start_pos=start_pos
+        )
+    
+        agent = LavaAgent(model, horizon=1, gamma=8.0)
+    
+        qs = np.zeros(model.num_states)
+        start_idx = start_pos[1] * width + start_pos[0]
+        qs[start_idx] = 1.0
+    
+        B = np.asarray(model.B["location_state"])
+        C = np.asarray(model.C["location_obs"])
+        policies = np.asarray(agent.policies)
+    
+>       G = compute_risk_G(qs, B, C, policies)
+
+tests\test_model_creation_tom.py:455: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+qs = array([0., 0., 0., 1., 0., 0., 0., 0., 0.])
+B = array([[[[1., 0., 1., 0., 1.],
+         [1., 0., 1., 0., 1.],
+         [1., 0., 1., 0., 1.],
+         ...,
+         [1...    ...,
+         [0., 1., 0., 1., 1.],
+         [0., 1., 0., 1., 1.],
+         [0., 1., 0., 1., 1.]]]], dtype=float32)
+C = array([50. , -2.1, -4.1, -2.1, -4.1, -6.1, -4.1, -6.1, -8.1],
+      dtype=float32)
+policies = array([[[0]],
+
+       [[1]],
+
+       [[2]],
+
+       [[3]],
+
+       [[4]]])
+A = array([[1., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 1., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 1., 0., 0., ...0., 0., 0., 0., 1., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 1., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 1.]])
+qs_other = None
+
+    def compute_risk_G(
+        qs: np.ndarray,
+        B: np.ndarray,
+        C: np.ndarray,
+        policies: np.ndarray,
+        A: Optional[np.ndarray] = None,
+        qs_other: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """
+        Compute risk-based Expected Free Energy for each policy.
+    
+        This is the "pragmatic value" component: expected utility under preferences C:
+            G(\u03c0) = -E_q(o|\u03c0)[ C(o) ]
+    
+        Parameters
+        ----------
+        qs : np.ndarray
+            Current belief state (num_states,)
+        B : np.ndarray
+            Transition model. Can be 3D or 4D (if conditioning on other agent).
+        C : np.ndarray
+            Preference vector over observations (num_obs,)
+        policies : np.ndarray
+            Policy set (num_policies, horizon, num_state_factors)
+        A : np.ndarray, optional
+            Observation model (num_obs, num_states). If None, assumes identity.
+        qs_other : np.ndarray, optional
+            Belief about other agent's position. Required if B is 4D.
+    
+        Returns
+        -------
+        G : np.ndarray
+            Risk-based EFE for each policy (num_policies,)
+        """
+        num_policies = len(policies)
+        num_states = len(qs)
+    
+        # Default to identity observation model if not provided
+        if A is None:
+            A = np.eye(num_states)
+    
+        G = np.zeros(num_policies)
+    
+        for pi_idx, policy in enumerate(policies):
+            # Policy shape: (horizon, num_state_factors)
+            # For lava: num_state_factors = 1, so squeeze
+            action_seq = policy[:, 0].astype(int)  # (horizon,)
+    
+            qs_t = qs.copy()
+            expected_utility = 0.0
+    
+            for action in action_seq:
+                # Predict next state (handles both 3D and 4D B)
+                if B.ndim == 3:
+                    qs_t = B[:, :, action] @ qs_t
+                elif B.ndim == 4:
+                    if qs_other is None:
+>                       raise ValueError("qs_other required for 4D B matrix")
+E                       ValueError: qs_other required for 4D B matrix
+
+tom\planning\si_lava.py:131: ValueError
+_______ TestVerticalMovement.test_diagonal_goal_allows_both_directions ________
+
+self = <test_model_creation_tom.TestVerticalMovement object at 0x000001410430E8F0>
+
+    def test_diagonal_goal_allows_both_directions(self):
+        """Test: With diagonal goal, both horizontal and vertical movement reduce distance."""
+        from tom.planning.si_lava import compute_risk_G
+    
+        width, height = 3, 3
+        safe_cells = [(x, y) for x in range(width) for y in range(height)]
+        start_pos = (0, 0)  # Top left
+        goal_pos = (2, 2)   # Bottom right
+    
+        model = LavaModel(
+            width=width,
+            height=height,
+            goal_x=goal_pos[0],
+            goal_y=goal_pos[1],
+            safe_cells=safe_cells,
+            start_pos=start_pos
+        )
+    
+        agent = LavaAgent(model, horizon=1, gamma=8.0)
+    
+        qs = np.zeros(model.num_states)
+        start_idx = start_pos[1] * width + start_pos[0]
+        qs[start_idx] = 1.0
+    
+        B = np.asarray(model.B["location_state"])
+        C = np.asarray(model.C["location_obs"])
+        policies = np.asarray(agent.policies)
+    
+>       G = compute_risk_G(qs, B, C, policies)
+
+tests\test_model_creation_tom.py:496: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+qs = array([1., 0., 0., 0., 0., 0., 0., 0., 0.])
+B = array([[[[1., 0., 1., 0., 1.],
+         [1., 0., 1., 0., 1.],
+         [1., 0., 1., 0., 1.],
+         ...,
+         [1...    ...,
+         [0., 1., 0., 1., 1.],
+         [0., 1., 0., 1., 1.],
+         [0., 1., 0., 1., 1.]]]], dtype=float32)
+C = array([-8.1, -6.1, -4.1, -6.1, -4.1, -2.1, -4.1, -2.1, 50. ],
+      dtype=float32)
+policies = array([[[0]],
+
+       [[1]],
+
+       [[2]],
+
+       [[3]],
+
+       [[4]]])
+A = array([[1., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 1., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 1., 0., 0., ...0., 0., 0., 0., 1., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 1., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 1.]])
+qs_other = None
+
+    def compute_risk_G(
+        qs: np.ndarray,
+        B: np.ndarray,
+        C: np.ndarray,
+        policies: np.ndarray,
+        A: Optional[np.ndarray] = None,
+        qs_other: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """
+        Compute risk-based Expected Free Energy for each policy.
+    
+        This is the "pragmatic value" component: expected utility under preferences C:
+            G(\u03c0) = -E_q(o|\u03c0)[ C(o) ]
+    
+        Parameters
+        ----------
+        qs : np.ndarray
+            Current belief state (num_states,)
+        B : np.ndarray
+            Transition model. Can be 3D or 4D (if conditioning on other agent).
+        C : np.ndarray
+            Preference vector over observations (num_obs,)
+        policies : np.ndarray
+            Policy set (num_policies, horizon, num_state_factors)
+        A : np.ndarray, optional
+            Observation model (num_obs, num_states). If None, assumes identity.
+        qs_other : np.ndarray, optional
+            Belief about other agent's position. Required if B is 4D.
+    
+        Returns
+        -------
+        G : np.ndarray
+            Risk-based EFE for each policy (num_policies,)
+        """
+        num_policies = len(policies)
+        num_states = len(qs)
+    
+        # Default to identity observation model if not provided
+        if A is None:
+            A = np.eye(num_states)
+    
+        G = np.zeros(num_policies)
+    
+        for pi_idx, policy in enumerate(policies):
+            # Policy shape: (horizon, num_state_factors)
+            # For lava: num_state_factors = 1, so squeeze
+            action_seq = policy[:, 0].astype(int)  # (horizon,)
+    
+            qs_t = qs.copy()
+            expected_utility = 0.0
+    
+            for action in action_seq:
+                # Predict next state (handles both 3D and 4D B)
+                if B.ndim == 3:
+                    qs_t = B[:, :, action] @ qs_t
+                elif B.ndim == 4:
+                    if qs_other is None:
+>                       raise ValueError("qs_other required for 4D B matrix")
+E                       ValueError: qs_other required for 4D B matrix
+
+tom\planning\si_lava.py:131: ValueError
+=========================== short test summary info ===========================
+FAILED tests/test_model_creation_tom.py::TestMatrixShapes::test_B_matrix_shape
+FAILED tests/test_model_creation_tom.py::TestTransitionDynamics::test_stay_action_deterministic
+FAILED tests/test_model_creation_tom.py::TestTransitionDynamics::test_right_action_moves_right
+FAILED tests/test_model_creation_tom.py::TestTransitionDynamics::test_up_action_moves_up
+FAILED tests/test_model_creation_tom.py::TestTransitionDynamics::test_boundary_handling
+FAILED tests/test_model_creation_tom.py::TestModelConsistency::test_small_model
+FAILED tests/test_model_creation_tom.py::TestModelConsistency::test_large_model
+FAILED tests/test_model_creation_tom.py::TestVerticalMovement::test_down_movement_from_goal_below
+FAILED tests/test_model_creation_tom.py::TestVerticalMovement::test_up_movement_from_goal_above
+FAILED tests/test_model_creation_tom.py::TestVerticalMovement::test_diagonal_goal_allows_both_directions
+======================== 10 failed, 15 passed in 1.41s ========================
+
+FAILED: TOM Model Creation
+
+STEP 4: TOM Integration...
+
+================================================================================
+TOM Integration
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 9 items
+
+tests/test_integration_tom.py::TestIntegrationBasic::test_create_all_components PASSED [ 11%]
+tests/test_integration_tom.py::TestIntegrationBasic::test_model_env_compatibility PASSED [ 22%]
+tests/test_integration_tom.py::TestManualInference::test_inference_from_env_observation PASSED [ 33%]
+tests/test_integration_tom.py::TestManualInference::test_belief_update_after_action FAILED [ 44%]
+tests/test_integration_tom.py::TestPolicyEvaluation::test_policy_forward_simulation FAILED [ 55%]
+tests/test_integration_tom.py::TestPolicyEvaluation::test_expected_outcome_distribution FAILED [ 66%]
+tests/test_integration_tom.py::TestMultiAgentInteraction::test_two_agent_env PASSED [ 77%]
+tests/test_integration_tom.py::TestMultiAgentInteraction::test_two_agent_separate_beliefs PASSED [ 88%]
+tests/test_integration_tom.py::TestEndToEndScenario::test_full_pipeline FAILED [100%]
+
+================================== FAILURES ===================================
+_____________ TestManualInference.test_belief_update_after_action _____________
+
+self = <test_integration_tom.TestManualInference object at 0x000001FC99E849D0>
+
+    def test_belief_update_after_action(self):
+        """Test belief update after taking an action."""
+        model = LavaModel(width=4, height=3)
+        env = LavaV1Env(width=4, height=3, num_agents=1, timesteps=10)
+    
+        key = jr.PRNGKey(0)
+        state, obs = env.reset(key)
+    
+        # Initial observation and belief
+        obs_0 = int(np.asarray(obs[0]["location_obs"])[0])
+        A = np.asarray(model.A["location_obs"])
+        B = np.asarray(model.B["location_state"])
+        D = np.asarray(model.D["location_state"])
+    
+        # Initial belief
+        qs_0 = A[obs_0] * D
+        qs_0 = qs_0 / qs_0.sum()
+    
+        # Take action RIGHT
+        RIGHT = 3
+        next_state, next_obs, _, _, _ = env.step(state, {0: RIGHT})
+    
+        # New observation
+        obs_1 = int(np.asarray(next_obs[0]["location_obs"])[0])
+    
+        # Predicted belief (using B)
+>       qs_pred = (B[:, :, RIGHT] @ qs_0)
+E       ValueError: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 12 is different from 5)
+
+tests\test_integration_tom.py:133: ValueError
+------------------------------ Captured log call ------------------------------
+INFO     src.envs.lava_corridor:lava_corridor.py:73 LavaCorridorConfig: width=4, num_agents=1, slip_prob=0.0
+INFO     src.envs.lava_corridor:lava_corridor.py:74   Start positions: {0: (0, 1), 1: (0, 1)}
+INFO     src.envs.lava_corridor:lava_corridor.py:126 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:127 Lava Corridor Environment Initialized
+INFO     src.envs.lava_corridor:lava_corridor.py:128 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:129 Grid: 4x3 (width x height)
+INFO     src.envs.lava_corridor:lava_corridor.py:130 Safe row: y=1
+INFO     src.envs.lava_corridor:lava_corridor.py:131 Goal: x=3, y=1
+INFO     src.envs.lava_corridor:lava_corridor.py:132 Num agents: 1
+INFO     src.envs.lava_corridor:lava_corridor.py:133 Start positions: {0: (0, 1), 1: (0, 1)}
+INFO     src.envs.lava_corridor:lava_corridor.py:134 Slip probability: 0.0
+INFO     src.envs.lava_corridor:lava_corridor.py:135 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:162 Resetting environment
+INFO     src.envs.lava_corridor:lava_corridor.py:175 Reset complete: t=0
+INFO     src.envs.lava_corridor:lava_corridor.py:178   Agent 0: position=(0, 1), obs_idx=4
+_____________ TestPolicyEvaluation.test_policy_forward_simulation _____________
+
+self = <test_integration_tom.TestPolicyEvaluation object at 0x000001FC99E84F70>
+
+    def test_policy_forward_simulation(self):
+        """Test forward simulation of a policy using B matrix."""
+        model = LavaModel(width=4, height=3)
+    
+        # Start at state (1, 0) - middle row, leftmost
+        s0 = 1 * model.width + 0  # y=1, x=0
+        qs = np.zeros(model.num_states)
+        qs[s0] = 1.0
+    
+        # Policy: [RIGHT, RIGHT] - move right twice
+        policy = [3, 3]
+        B = np.asarray(model.B["location_state"])
+    
+        # Simulate forward
+        qs_t = qs.copy()
+        trajectory = [s0]
+    
+        for action in policy:
+            # Predict next state
+>           qs_t = B[:, :, action] @ qs_t
+E           ValueError: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 12 is different from 5)
+
+tests\test_integration_tom.py:171: ValueError
+___________ TestPolicyEvaluation.test_expected_outcome_distribution ___________
+
+self = <test_integration_tom.TestPolicyEvaluation object at 0x000001FC99E85930>
+
+    def test_expected_outcome_distribution(self):
+        """Test computing expected outcome distribution over a policy."""
+        model = LavaModel(width=4, height=3)
+        A = np.asarray(model.A["location_obs"])
+        B = np.asarray(model.B["location_state"])
+        D = np.asarray(model.D["location_state"])
+    
+        # Start belief
+        qs = D.copy()
+    
+        # Policy: STAY for 3 steps
+        policy = [4, 4, 4]
+    
+        # Collect observation distributions
+        obs_dists = []
+    
+        qs_t = qs.copy()
+        for action in policy:
+            # Predict next belief
+>           qs_t = B[:, :, action] @ qs_t
+E           ValueError: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 12 is different from 5)
+
+tests\test_integration_tom.py:203: ValueError
+___________________ TestEndToEndScenario.test_full_pipeline ___________________
+
+self = <test_integration_tom.TestEndToEndScenario object at 0x000001FC99E84C70>
+
+    def test_full_pipeline(self):
+        """Test full pipeline: create, reset, observe, infer, predict, step."""
+        # 1. Create components
+        model = LavaModel(width=4, height=3)
+        agent = LavaAgent(model, horizon=1, gamma=8.0)
+        env = LavaV1Env(width=4, height=3, num_agents=1, timesteps=10)
+    
+        # 2. Reset environment
+        key = jr.PRNGKey(0)
+        state, obs = env.reset(key)
+    
+        # 3. Observe
+        obs_t = int(np.asarray(obs[0]["location_obs"])[0])
+    
+        # 4. Infer state
+        A = np.asarray(model.A["location_obs"])
+        D = np.asarray(model.D["location_state"])
+        qs = A[obs_t] * D
+        qs = qs / qs.sum()
+    
+        # 5. Evaluate policies (simple: just count expected reward)
+        B = np.asarray(model.B["location_state"])
+        C = np.asarray(model.C["location_obs"])
+    
+        policy_values = []
+        for policy_idx in range(len(agent.policies)):
+            action = int(agent.policies[policy_idx, 0, 0])
+    
+            # Predict next state
+>           qs_next = B[:, :, action] @ qs
+E           ValueError: matmul: Input operand 1 has a mismatch in its core dimension 0, with gufunc signature (n?,k),(k,m?)->(n?,m?) (size 12 is different from 5)
+
+tests\test_integration_tom.py:322: ValueError
+------------------------------ Captured log call ------------------------------
+INFO     src.envs.lava_corridor:lava_corridor.py:73 LavaCorridorConfig: width=4, num_agents=1, slip_prob=0.0
+INFO     src.envs.lava_corridor:lava_corridor.py:74   Start positions: {0: (0, 1), 1: (0, 1)}
+INFO     src.envs.lava_corridor:lava_corridor.py:126 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:127 Lava Corridor Environment Initialized
+INFO     src.envs.lava_corridor:lava_corridor.py:128 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:129 Grid: 4x3 (width x height)
+INFO     src.envs.lava_corridor:lava_corridor.py:130 Safe row: y=1
+INFO     src.envs.lava_corridor:lava_corridor.py:131 Goal: x=3, y=1
+INFO     src.envs.lava_corridor:lava_corridor.py:132 Num agents: 1
+INFO     src.envs.lava_corridor:lava_corridor.py:133 Start positions: {0: (0, 1), 1: (0, 1)}
+INFO     src.envs.lava_corridor:lava_corridor.py:134 Slip probability: 0.0
+INFO     src.envs.lava_corridor:lava_corridor.py:135 ================================================================================
+INFO     src.envs.lava_corridor:lava_corridor.py:162 Resetting environment
+INFO     src.envs.lava_corridor:lava_corridor.py:175 Reset complete: t=0
+INFO     src.envs.lava_corridor:lava_corridor.py:178   Agent 0: position=(0, 1), obs_idx=4
+=========================== short test summary info ===========================
+FAILED tests/test_integration_tom.py::TestManualInference::test_belief_update_after_action
+FAILED tests/test_integration_tom.py::TestPolicyEvaluation::test_policy_forward_simulation
+FAILED tests/test_integration_tom.py::TestPolicyEvaluation::test_expected_outcome_distribution
+FAILED tests/test_integration_tom.py::TestEndToEndScenario::test_full_pipeline
+========================= 4 failed, 5 passed in 0.97s =========================
+
+FAILED: TOM Integration
+
+STEP 5: LavaV2Env Layout Variants...
+
+================================================================================
+LavaV2Env Variants
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 14 items
+
+tests/test_lava_v2_env.py::TestLayoutCreation::test_narrow_layout FAILED [  7%]
+tests/test_lava_v2_env.py::TestLayoutCreation::test_wide_layout PASSED   [ 14%]
+tests/test_lava_v2_env.py::TestLayoutCreation::test_bottleneck_layout PASSED [ 21%]
+tests/test_lava_v2_env.py::TestLayoutCreation::test_risk_reward_layout PASSED [ 28%]
+tests/test_lava_v2_env.py::TestLavaV2EnvCreation::test_create_wide_env PASSED [ 35%]
+tests/test_lava_v2_env.py::TestLavaV2EnvCreation::test_create_bottleneck_env PASSED [ 42%]
+tests/test_lava_v2_env.py::TestExtendedObservations::test_observation_structure PASSED [ 50%]
+tests/test_lava_v2_env.py::TestExtendedObservations::test_symmetric_observations PASSED [ 57%]
+tests/test_lava_v2_env.py::TestDifferentStartPositions::test_wide_different_starts PASSED [ 64%]
+tests/test_lava_v2_env.py::TestDifferentStartPositions::test_narrow_same_x_different_y PASSED [ 71%]
+tests/test_lava_v2_env.py::TestCollisionDetection::test_collision_when_same_position FAILED [ 78%]
+tests/test_lava_v2_env.py::TestCollisionDetection::test_no_collision_different_positions FAILED [ 85%]
+tests/test_lava_v2_env.py::TestGoalReaching::test_goal_detection FAILED  [ 92%]
+tests/test_lava_v2_env.py::TestRendering::test_render_initial_state PASSED [100%]
+
+================================== FAILURES ===================================
+____________________ TestLayoutCreation.test_narrow_layout ____________________
+
+self = <test_lava_v2_env.TestLayoutCreation object at 0x00000232F6A9C550>
+
+    def test_narrow_layout(self):
+        """Test narrow corridor layout."""
+        layout = get_layout("narrow", width=6)
+    
+        assert layout.width == 6
+        assert layout.height == 3
+        assert layout.name == "narrow_corridor"
+        assert len(layout.start_positions) >= 2
+    
+        print(f"\nNarrow layout:")
+        print(f"  Dimensions: {layout.width}x{layout.height}")
+>       print(f"  Goal: {layout.goal_pos}")
+E       AttributeError: 'LavaLayout' object has no attribute 'goal_pos'
+
+tests\test_lava_v2_env.py:41: AttributeError
+---------------------------- Captured stdout call -----------------------------
+
+Narrow layout:
+  Dimensions: 6x3
+__________ TestCollisionDetection.test_collision_when_same_position ___________
+
+self = <test_lava_v2_env.TestCollisionDetection object at 0x00000232F6A9E860>
+
+    def test_collision_when_same_position(self):
+        """Test that collision is detected when agents at same position."""
+        env = LavaV2Env(layout_name="wide", width=6, num_agents=2, timesteps=20)
+    
+        key = jr.PRNGKey(0)
+        state, obs = env.reset(key)
+    
+        # Force both agents to same position by moving them there
+        # Get current positions
+        pos_0 = state["env_state"]["pos"][0]
+        pos_1 = state["env_state"]["pos"][1]
+    
+        # If agents can reach same position by both moving RIGHT
+        # This depends on layout, so let's just test the collision detection logic directly
+        test_positions = {0: (2, 1), 1: (2, 1)}  # Same position
+>       collision = env._check_collision(test_positions)
+E       TypeError: LavaV2Env._check_collision() missing 1 required positional argument: 'next_positions'
+
+tests\test_lava_v2_env.py:212: TypeError
+________ TestCollisionDetection.test_no_collision_different_positions _________
+
+self = <test_lava_v2_env.TestCollisionDetection object at 0x00000232F6A9C9D0>
+
+    def test_no_collision_different_positions(self):
+        """Test that no collision when agents at different positions."""
+        env = LavaV2Env(layout_name="wide", width=6, num_agents=2, timesteps=20)
+    
+        test_positions = {0: (2, 1), 1: (3, 1)}  # Different positions
+>       collision = env._check_collision(test_positions)
+E       TypeError: LavaV2Env._check_collision() missing 1 required positional argument: 'next_positions'
+
+tests\test_lava_v2_env.py:225: TypeError
+____________________ TestGoalReaching.test_goal_detection _____________________
+
+self = <test_lava_v2_env.TestGoalReaching object at 0x00000232F6A9CD60>
+
+    def test_goal_detection(self):
+        """Test that goal reaching is detected correctly."""
+        env = LavaV2Env(layout_name="wide", width=6, num_agents=2, timesteps=20)
+    
+>       goal_pos = env.layout.goal_pos
+E       AttributeError: 'LavaLayout' object has no attribute 'goal_pos'
+
+tests\test_lava_v2_env.py:241: AttributeError
+=========================== short test summary info ===========================
+FAILED tests/test_lava_v2_env.py::TestLayoutCreation::test_narrow_layout - At...
+FAILED tests/test_lava_v2_env.py::TestCollisionDetection::test_collision_when_same_position
+FAILED tests/test_lava_v2_env.py::TestCollisionDetection::test_no_collision_different_positions
+FAILED tests/test_lava_v2_env.py::TestGoalReaching::test_goal_detection - Att...
+======================== 4 failed, 10 passed in 0.62s =========================
+
+FAILED: LavaV2Env Variants
+
+STEP 6: Path Flexibility Metrics (E, R, O, F)...
+
+================================================================================
+Path Flexibility Metrics
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 10 items
+
+tests/test_path_flexibility_metrics.py::TestEmpowerment::test_empowerment_branching_vs_dead_end PASSED [ 10%]
+tests/test_path_flexibility_metrics.py::TestEmpowerment::test_empowerment_decreases_along_chain PASSED [ 20%]
+tests/test_path_flexibility_metrics.py::TestReturnability::test_returnability_shared_outcomes PASSED [ 30%]
+tests/test_path_flexibility_metrics.py::TestReturnability::test_returnability_increases_with_horizon PASSED [ 40%]
+tests/test_path_flexibility_metrics.py::TestOverlap::test_overlap_identical_policies PASSED [ 50%]
+tests/test_path_flexibility_metrics.py::TestOverlap::test_overlap_diverging_policies PASSED [ 60%]
+tests/test_path_flexibility_metrics.py::TestPathFlexibility::test_flexibility_composition PASSED [ 70%]
+tests/test_path_flexibility_metrics.py::TestPathFlexibility::test_flexibility_weights PASSED [ 80%]
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_single_state_model PASSED [ 90%]
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_zero_horizon PASSED [100%]
+
+============================== warnings summary ===============================
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_zero_horizon
+  C:\Users\mahau\anaconda3\envs\alignment\lib\site-packages\numpy\core\fromnumeric.py:3504: RuntimeWarning: Mean of empty slice.
+    return _methods._mean(a, axis=axis, dtype=dtype,
+
+tests/test_path_flexibility_metrics.py::TestEdgeCases::test_zero_horizon
+  C:\Users\mahau\anaconda3\envs\alignment\lib\site-packages\numpy\core\_methods.py:129: RuntimeWarning: invalid value encountered in scalar divide
+    ret = ret.dtype.type(ret / rcount)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 10 passed, 2 warnings in 0.34s ========================
+
+PASSED: Path Flexibility Metrics
+
+STEP 7: F-Aware Policy Prior...
+
+================================================================================
+F-Aware Prior
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 8 items
+
+tests/test_F_aware_prior.py::TestFAwarePriorBaseline::test_kappa_zero_equals_baseline PASSED [ 12%]
+tests/test_F_aware_prior.py::TestFAwarePriorBiasing::test_kappa_positive_biases_toward_high_F PASSED [ 25%]
+tests/test_F_aware_prior.py::TestFAwarePriorBiasing::test_kappa_strength PASSED [ 37%]
+tests/test_F_aware_prior.py::TestJointFlexibilityWeighting::test_beta_weighting PASSED [ 50%]
+tests/test_F_aware_prior.py::TestEFEAndFlexibilityTradeoff::test_EFE_dominates_when_kappa_small PASSED [ 62%]
+tests/test_F_aware_prior.py::TestEFEAndFlexibilityTradeoff::test_flexibility_can_overcome_EFE_when_kappa_large PASSED [ 75%]
+tests/test_F_aware_prior.py::TestNumericalStability::test_large_gamma_values PASSED [ 87%]
+tests/test_F_aware_prior.py::TestNumericalStability::test_extreme_flexibility_differences PASSED [100%]
+
+============================== 8 passed in 0.33s ==============================
+
+PASSED: F-Aware Prior
+
+STEP 8: JAX Path Flexibility Correctness...
+
+================================================================================
+JAX Path Flexibility
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 7 items
+
+tests/test_jax_correctness.py::test_empowerment_one_step ERROR           [ 14%]
+tests/test_jax_correctness.py::test_rollout_beliefs_and_obs ERROR        [ 28%]
+tests/test_jax_correctness.py::test_empowerment_along_rollout ERROR      [ 42%]
+tests/test_jax_correctness.py::test_returnability ERROR                  [ 57%]
+tests/test_jax_correctness.py::test_overlap ERROR                        [ 71%]
+tests/test_jax_correctness.py::test_full_flexibility_computation ERROR   [ 85%]
+tests/test_jax_correctness.py::test_jax_faster_than_numpy ERROR          [100%]
+
+=================================== ERRORS ====================================
+_________________ ERROR at setup of test_empowerment_one_step _________________
+
+    @pytest.fixture
+    def lava_model_h1():
+        """Simple lava model with horizon=1."""
+>       return LavaModel(width=7, height=3, horizon=1, start_pos=(0, 1), goal_x=6, goal_y=1)
+E       TypeError: LavaModel.__init__() got an unexpected keyword argument 'horizon'
+
+tests\test_jax_correctness.py:46: TypeError
+_______________ ERROR at setup of test_rollout_beliefs_and_obs ________________
+
+    @pytest.fixture
+    def lava_model_h3():
+        """Lava model with horizon=3 (125 policies)."""
+>       return LavaModel(width=7, height=3, horizon=3, start_pos=(0, 1), goal_x=6, goal_y=1)
+E       TypeError: LavaModel.__init__() got an unexpected keyword argument 'horizon'
+
+tests\test_jax_correctness.py:52: TypeError
+______________ ERROR at setup of test_empowerment_along_rollout _______________
+
+    @pytest.fixture
+    def lava_model_h3():
+        """Lava model with horizon=3 (125 policies)."""
+>       return LavaModel(width=7, height=3, horizon=3, start_pos=(0, 1), goal_x=6, goal_y=1)
+E       TypeError: LavaModel.__init__() got an unexpected keyword argument 'horizon'
+
+tests\test_jax_correctness.py:52: TypeError
+____________________ ERROR at setup of test_returnability _____________________
+
+    @pytest.fixture
+    def lava_model_h3():
+        """Lava model with horizon=3 (125 policies)."""
+>       return LavaModel(width=7, height=3, horizon=3, start_pos=(0, 1), goal_x=6, goal_y=1)
+E       TypeError: LavaModel.__init__() got an unexpected keyword argument 'horizon'
+
+tests\test_jax_correctness.py:52: TypeError
+_______________________ ERROR at setup of test_overlap ________________________
+
+    @pytest.fixture
+    def lava_model_h3():
+        """Lava model with horizon=3 (125 policies)."""
+>       return LavaModel(width=7, height=3, horizon=3, start_pos=(0, 1), goal_x=6, goal_y=1)
+E       TypeError: LavaModel.__init__() got an unexpected keyword argument 'horizon'
+
+tests\test_jax_correctness.py:52: TypeError
+_____________ ERROR at setup of test_full_flexibility_computation _____________
+
+    @pytest.fixture
+    def lava_model_h3():
+        """Lava model with horizon=3 (125 policies)."""
+>       return LavaModel(width=7, height=3, horizon=3, start_pos=(0, 1), goal_x=6, goal_y=1)
+E       TypeError: LavaModel.__init__() got an unexpected keyword argument 'horizon'
+
+tests\test_jax_correctness.py:52: TypeError
+________________ ERROR at setup of test_jax_faster_than_numpy _________________
+
+    @pytest.fixture
+    def lava_model_h3():
+        """Lava model with horizon=3 (125 policies)."""
+>       return LavaModel(width=7, height=3, horizon=3, start_pos=(0, 1), goal_x=6, goal_y=1)
+E       TypeError: LavaModel.__init__() got an unexpected keyword argument 'horizon'
+
+tests\test_jax_correctness.py:52: TypeError
+=========================== short test summary info ===========================
+ERROR tests/test_jax_correctness.py::test_empowerment_one_step - TypeError: L...
+ERROR tests/test_jax_correctness.py::test_rollout_beliefs_and_obs - TypeError...
+ERROR tests/test_jax_correctness.py::test_empowerment_along_rollout - TypeErr...
+ERROR tests/test_jax_correctness.py::test_returnability - TypeError: LavaMode...
+ERROR tests/test_jax_correctness.py::test_overlap - TypeError: LavaModel.__in...
+ERROR tests/test_jax_correctness.py::test_full_flexibility_computation - Type...
+ERROR tests/test_jax_correctness.py::test_jax_faster_than_numpy - TypeError: ...
+============================== 7 errors in 0.53s ==============================
+
+FAILED: JAX Path Flexibility
+
+STEP 9: JAX Empathy Rollout Correctness...
+
+================================================================================
+JAX Empathy Rollout
+================================================================================
+============================= test session starts =============================
+platform win32 -- Python 3.10.19, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\mahau\anaconda3\envs\alignment\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments
+plugins: jaxtyping-0.3.3
+collecting ... collected 0 items / 1 error
+
+=================================== ERRORS ====================================
+_________________ ERROR collecting tests/test_jax_empathy.py __________________
+ImportError while importing test module 'C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\tests\test_jax_empathy.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+..\..\..\..\anaconda3\envs\alignment\lib\importlib\__init__.py:126: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+tests\test_jax_empathy.py:22: in <module>
+    from tom.planning.si_empathy_lava import (
+E   ImportError: cannot import name '_expected_location_utility' from 'tom.planning.si_empathy_lava' (C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\tom\planning\si_empathy_lava.py)
+=========================== short test summary info ===========================
+ERROR tests/test_jax_empathy.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+============================== 1 error in 0.56s ===============================
+
+FAILED: JAX Empathy Rollout
+
+STEP 10: 4D B Matrix and Multi-Step ToM...
+
+================================================================================
+4D B Matrix
+================================================================================
+
+============================================================
+Testing 4D B Matrix and Multi-Step ToM Planning
+============================================================
+
+============================================================
+TEST 1: B Matrix Collision Blocking
+============================================================
+
+B matrix shape: (12, 12, 12, 5)
+Expected: (num_states, num_states, num_states, num_actions)
+Got: (12, 12, 12, 5)
+
+Agent at state 4 (0,1), other at state 5 (1,1)
+Agent tries RIGHT (action 3)
+Transition probabilities:
+  State 5 (1,1): 1.00
+
+Stay at 4: 0.00 (should be 1.0)
+Move to 5: 1.00 (should be 0.0)
+
+============================================================
+TEST FAILED: Should stay in place when target occupied
+============================================================
+
+Traceback (most recent call last):
+  File "C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\test_4d_b_matrix.py", line 172, in main
+    test_b_matrix_blocking()
+  File "C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\test_4d_b_matrix.py", line 61, in test_b_matrix_blocking
+    assert stay_prob == 1.0, "Should stay in place when target occupied"
+AssertionError: Should stay in place when target occupied
+
+FAILED: 4D B Matrix
+
+STEP 11: JAX Planner Speedup Verification...
+
+================================================================================
+JAX Planner Speedup
+================================================================================
+================================================================================
+JAX-ENABLED EMPATHIC PLANNER TEST
+================================================================================
+
+Creating test models (horizon=3, 5^3=125 policies)...
+
+Traceback (most recent call last):
+  File "C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\test_jax_planner.py", line 61, in <module>
+    print(f"\u2713 Models created")
+  File "C:\Users\mahau\anaconda3\envs\alignment\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 0: character maps to <undefined>
+
+FAILED: JAX Planner Speedup
+
+================================================================================
+                            SUMMARY
+================================================================================
+FAILED: 8/11 tests
+PASSED: 3/11 tests
+
+Failed tests:
+  - test_lava_env_tom.py
+  - test_model_creation_tom.py
+  - test_integration_tom.py
+  - test_lava_v2_env.py
+  - test_jax_correctness.py
+  - test_jax_empathy.py
+  - test_4d_b_matrix.py
+  - test_jax_planner.py
+================================================================================
+
+Test run completed: 2025-12-11 15:42:32
+Log saved to: C:\Users\mahau\OneDrive\Desktop\projects\Alignment-experiments\results\test_logs\test_run_20251211_154218.log
+

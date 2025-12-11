@@ -229,8 +229,7 @@ pip install jax[cuda12]  # CUDA 12
 python test_jax_planner.py
 
 # Full test suite
-pytest tests/test_jax_empathy.py -v
-pytest tests/test_jax_correctness.py -v
+python run_all_tests.py
 ```
 
 ---

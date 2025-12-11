@@ -55,7 +55,8 @@ def test_lava_model_creation():
     # Check shapes
     num_states = model.width * model.height
     assert model.A["location_obs"].shape == (num_states, num_states)
-    assert model.B["location_state"].shape == (num_states, num_states, 5)  # 5 actions
+    # B matrix is 4D: (s_next, s_current, s_other, action) for multi-agent support
+    assert model.B["location_state"].shape == (num_states, num_states, num_states, 5)  # 4D for multi-agent
     assert model.C["location_obs"].shape == (num_states,)
     assert model.D["location_state"].shape == (num_states,)
 
@@ -82,8 +83,8 @@ def test_lava_agent_creation():
     assert agent.C is model.C, "Agent should expose model.C"
     assert agent.D is model.D, "Agent should expose model.D"
 
-    # Check policies
-    assert agent.policies.shape == (5, 1, 1), "Should have (5, 1, 1) policies"
+    # Check policies - for horizon=2, policies are (5^2, 2, 1) = (25, 2, 1)
+    assert agent.policies.shape == (25, 2, 1), "Should have (25, 2, 1) policies for horizon=2"
 
     LOGGER.info("✓ LavaAgent created successfully")
     LOGGER.info(f"  Policies shape: {agent.policies.shape}")
@@ -159,14 +160,15 @@ def test_lava_transitions():
     LOGGER.info("=" * 80)
 
     model = LavaModel(width=4, height=3)
-    B = model.B["location_state"]  # (num_states, num_states, num_actions)
+    B = model.B["location_state"]  # (s_next, s_current, s_other, action) - 4D
 
-    # Test STAY action (action 4)
+    # Test STAY action (action 4) with s_other=0 (arbitrary other agent position)
     STAY = 4
+    s_other = 0  # arbitrary other agent position for testing
     for s in range(model.num_states):
-        # STAY should keep agent in same state
-        prob_stay = B[s, s, STAY]
-        assert np.isclose(prob_stay, 1.0), f"STAY at state {s} should be deterministic"
+        # STAY should keep agent in same state regardless of other agent
+        prob_stay = B[s, s, s_other, STAY]
+        assert np.isclose(float(prob_stay), 1.0), f"STAY at state {s} should be deterministic"
 
     # Test RIGHT action moves agent right (when not at wall)
     RIGHT = 3
@@ -174,8 +176,8 @@ def test_lava_transitions():
     s_from = 1 * model.width + 0  # (y=1, x=0)
     s_to = 1 * model.width + 1    # (y=1, x=1)
 
-    prob_right = B[s_to, s_from, RIGHT]
-    assert np.isclose(prob_right, 1.0), f"RIGHT from ({0}, {1}) should go to ({1}, {1})"
+    prob_right = B[s_to, s_from, s_other, RIGHT]
+    assert np.isclose(float(prob_right), 1.0), f"RIGHT from ({0}, {1}) should go to ({1}, {1})"
 
     LOGGER.info("✓ Transition dynamics correct")
     LOGGER.info(f"  STAY: deterministic (p=1.0)")

@@ -40,16 +40,59 @@ from src.metrics.jax_path_flexibility import (
 from tom.models.model_lava import LavaModel
 
 
+class CompatibleModel:
+    """Wrapper to make LavaModel compatible with path_flexibility API.
+
+    The path_flexibility functions expect:
+    - model.A to be a list of arrays [A_matrix] or a single array
+    - model.B to be a list of arrays [B_matrix] or a single array (3D)
+    - model.D to be a list of arrays [D_vector] or a single array
+    - model.policies to be the policy array
+
+    But LavaModel now uses dicts and 4D B matrices. This wrapper provides
+    the old API for backward compatibility in tests.
+    """
+    def __init__(self, base_model, agent):
+        self.base_model = base_model
+        self.horizon = agent.horizon
+        self.policies = agent.policies
+        self.num_states = base_model.num_states
+
+        # Extract arrays from dicts
+        A_np = np.asarray(base_model.A["location_obs"])
+        B_4d = np.asarray(base_model.B["location_state"])  # 4D: (s', s, s_other, a)
+        D_np = np.asarray(base_model.D["location_state"])
+
+        # Convert 4D B to 3D by marginalizing over s_other (assuming uniform)
+        # B_3d[s', s, a] = sum_s_other B_4d[s', s, s_other, a] / num_states
+        B_3d = B_4d.mean(axis=2)  # (s', s, a)
+
+        # Transpose to [num_actions, s', s] for path_flexibility API
+        # path_flexibility expects B[action, s', s]
+        B_transposed = np.transpose(B_3d, (2, 0, 1))  # (a, s', s)
+
+        # Store in list format (pymdp-style)
+        self.A = [A_np]
+        self.B = [B_transposed]
+        self.D = [D_np]
+
+
 @pytest.fixture
 def lava_model_h1():
     """Simple lava model with horizon=1."""
-    return LavaModel(width=7, height=3, horizon=1, start_pos=(0, 1), goal_x=6, goal_y=1)
+    from tom.models import LavaAgent
+    model = LavaModel(width=7, height=3, start_pos=(0, 1), goal_x=6, goal_y=1)
+    agent = LavaAgent(model, horizon=1, gamma=8.0)
+    return CompatibleModel(model, agent)
 
 
 @pytest.fixture
 def lava_model_h3():
     """Lava model with horizon=3 (125 policies)."""
-    return LavaModel(width=7, height=3, horizon=3, start_pos=(0, 1), goal_x=6, goal_y=1)
+    from tom.models import LavaAgent
+    model = LavaModel(width=7, height=3, start_pos=(0, 1), goal_x=6, goal_y=1)
+    agent = LavaAgent(model, horizon=3, gamma=8.0)
+    return CompatibleModel(model, agent)
 
 
 def test_empowerment_one_step(lava_model_h1):
@@ -78,19 +121,13 @@ def test_rollout_beliefs_and_obs(lava_model_h3):
     model = lava_model_h3
     policy_id = 0
 
-    # NumPy rollout
+    # NumPy rollout (uses CompatibleModel with list-style API)
     q_s_numpy, p_o_numpy = rollout_beliefs_and_obs(policy_id, model, model.horizon)
 
-    # JAX rollout
-    A = jnp.array(model.A["location_obs"])
-    B_raw = jnp.array(model.B["location_state"])
-    D = jnp.array(model.D["location_state"])
-
-    # Transpose B if needed
-    if B_raw.shape[0] == B_raw.shape[1] and B_raw.shape[2] < B_raw.shape[0]:
-        B = jnp.transpose(B_raw, (2, 0, 1))
-    else:
-        B = B_raw
+    # JAX rollout - extract arrays from CompatibleModel
+    A = jnp.array(model.A[0])  # CompatibleModel uses list format
+    B = jnp.array(model.B[0])  # Already in [num_actions, s', s] format
+    D = jnp.array(model.D[0])
 
     policy = jnp.array(model.policies[policy_id], dtype=jnp.int32)
     q_s_jax, p_o_jax = rollout_beliefs_and_obs_jax(policy, A, B, D)
@@ -115,18 +152,13 @@ def test_empowerment_along_rollout(lava_model_h3):
     model = lava_model_h3
     policy_id = 0
 
-    # NumPy computation
+    # NumPy computation (uses CompatibleModel with list-style API)
     E_numpy = compute_empowerment_along_rollout(model, policy_id, model.horizon)
 
-    # JAX computation
-    A = jnp.array(model.A["location_obs"])
-    B_raw = jnp.array(model.B["location_state"])
-    D = jnp.array(model.D["location_state"])
-
-    if B_raw.shape[0] == B_raw.shape[1] and B_raw.shape[2] < B_raw.shape[0]:
-        B = jnp.transpose(B_raw, (2, 0, 1))
-    else:
-        B = B_raw
+    # JAX computation - extract arrays from CompatibleModel
+    A = jnp.array(model.A[0])
+    B = jnp.array(model.B[0])  # Already in correct format
+    D = jnp.array(model.D[0])
 
     policy = jnp.array(model.policies[policy_id], dtype=jnp.int32)
     E_jax = float(compute_empowerment_along_rollout_jax(policy, A, B, D))

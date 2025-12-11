@@ -90,7 +90,8 @@ class TestMatrixShapes:
 
         num_states = model.num_states
         num_actions = 5  # UP, DOWN, LEFT, RIGHT, STAY
-        expected_shape = (num_states, num_states, num_actions)
+        # B matrix is 4D: (s_next, s_current, s_other, action) for multi-agent
+        expected_shape = (num_states, num_states, num_states, num_actions)
 
         assert B.shape == expected_shape, f"B should be {expected_shape}"
         print(f"\nB matrix: {B.shape}")
@@ -139,12 +140,14 @@ class TestMatrixProperties:
 
         num_actions = 5
 
-        # Each B[:, :, a] should be a valid stochastic matrix
+        # B is 4D: (s_next, s_current, s_other, action)
+        # For each s_other and action, B[:, :, s_other, a] should be a valid stochastic matrix
         # (columns sum to 1)
+        s_other = 0  # Test with one s_other value
         for a in range(num_actions):
-            col_sums = B[:, :, a].sum(axis=0)
+            col_sums = B[:, :, s_other, a].sum(axis=0)
             assert np.allclose(col_sums, 1.0), \
-                f"B[:,:,{a}] columns should sum to 1"
+                f"B[:,:,{s_other},{a}] columns should sum to 1"
 
         print(f"\nB transition validity: all columns sum to 1.0")
 
@@ -198,10 +201,11 @@ class TestTransitionDynamics:
         B = np.asarray(model.B["location_state"])
 
         STAY = 4
+        s_other = 0  # arbitrary other agent position
 
         for s in range(model.num_states):
-            prob_stay = B[s, s, STAY]
-            assert np.isclose(prob_stay, 1.0), \
+            prob_stay = B[s, s, s_other, STAY]
+            assert np.isclose(float(prob_stay), 1.0), \
                 f"STAY at state {s} should be deterministic (p=1.0)"
 
         print(f"\nSTAY action: deterministic for all states")
@@ -212,13 +216,14 @@ class TestTransitionDynamics:
         B = np.asarray(model.B["location_state"])
 
         RIGHT = 3
+        s_other = 0  # arbitrary other agent position
 
         # State (y=1, x=0) should move to (y=1, x=1) with RIGHT
         s_from = 1 * model.width + 0  # (1, 0)
         s_to = 1 * model.width + 1    # (1, 1)
 
-        prob_right = B[s_to, s_from, RIGHT]
-        assert np.isclose(prob_right, 1.0), \
+        prob_right = B[s_to, s_from, s_other, RIGHT]
+        assert np.isclose(float(prob_right), 1.0), \
             f"RIGHT from (1,0) should go to (1,1) with p=1.0"
 
         print(f"\nRIGHT action: moves agent right correctly")
@@ -229,13 +234,14 @@ class TestTransitionDynamics:
         B = np.asarray(model.B["location_state"])
 
         UP = 0
+        s_other = 0  # arbitrary other agent position
 
         # State (y=2, x=1) should move to (y=1, x=1) with UP
         s_from = 2 * model.width + 1  # (2, 1)
         s_to = 1 * model.width + 1    # (1, 1)
 
-        prob_up = B[s_to, s_from, UP]
-        assert np.isclose(prob_up, 1.0), \
+        prob_up = B[s_to, s_from, s_other, UP]
+        assert np.isclose(float(prob_up), 1.0), \
             f"UP from (2,1) should go to (1,1)"
 
         print(f"\nUP action: moves agent up correctly")
@@ -246,12 +252,13 @@ class TestTransitionDynamics:
         B = np.asarray(model.B["location_state"])
 
         RIGHT = 3
+        s_other = 0  # arbitrary other agent position
 
         # At right boundary (y=1, x=3), RIGHT should stay
         s_boundary = 1 * model.width + 3  # (1, 3)
 
-        prob_stay = B[s_boundary, s_boundary, RIGHT]
-        assert np.isclose(prob_stay, 1.0), \
+        prob_stay = B[s_boundary, s_boundary, s_other, RIGHT]
+        assert np.isclose(float(prob_stay), 1.0), \
             "RIGHT at right boundary should stay in place"
 
         print(f"\nBoundary handling: agent stays at walls")
@@ -334,7 +341,8 @@ class TestModelConsistency:
 
         assert model.num_states == 9
         assert model.A["location_obs"].shape == (9, 9)
-        assert model.B["location_state"].shape == (9, 9, 5)
+        # B is 4D: (s_next, s_current, s_other, action)
+        assert model.B["location_state"].shape == (9, 9, 9, 5)
 
         print(f"\nSmall model (3x3): {model.num_states} states")
 
@@ -344,7 +352,8 @@ class TestModelConsistency:
 
         assert model.num_states == 30
         assert model.A["location_obs"].shape == (30, 30)
-        assert model.B["location_state"].shape == (30, 30, 5)
+        # B is 4D: (s_next, s_current, s_other, action)
+        assert model.B["location_state"].shape == (30, 30, 30, 5)
 
         print(f"\nLarge model (10x3): {model.num_states} states")
 
@@ -404,12 +413,15 @@ class TestVerticalMovement:
         start_idx = start_pos[1] * width + start_pos[0]
         qs[start_idx] = 1.0
 
+        # Other agent belief (uniform - no specific other agent)
+        qs_other = np.ones(model.num_states) / model.num_states
+
         # Compute EFE
         B = np.asarray(model.B["location_state"])
         C = np.asarray(model.C["location_obs"])
         policies = np.asarray(agent.policies)
 
-        G = compute_risk_G(qs, B, C, policies)
+        G = compute_risk_G(qs, B, C, policies, qs_other=qs_other)
 
         best_action = np.argmin(G)
         action_names = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
@@ -448,11 +460,14 @@ class TestVerticalMovement:
         start_idx = start_pos[1] * width + start_pos[0]
         qs[start_idx] = 1.0
 
+        # Other agent belief (uniform - no specific other agent)
+        qs_other = np.ones(model.num_states) / model.num_states
+
         B = np.asarray(model.B["location_state"])
         C = np.asarray(model.C["location_obs"])
         policies = np.asarray(agent.policies)
 
-        G = compute_risk_G(qs, B, C, policies)
+        G = compute_risk_G(qs, B, C, policies, qs_other=qs_other)
         best_action = np.argmin(G)
 
         action_names = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
@@ -489,11 +504,14 @@ class TestVerticalMovement:
         start_idx = start_pos[1] * width + start_pos[0]
         qs[start_idx] = 1.0
 
+        # Other agent belief (uniform - no specific other agent)
+        qs_other = np.ones(model.num_states) / model.num_states
+
         B = np.asarray(model.B["location_state"])
         C = np.asarray(model.C["location_obs"])
         policies = np.asarray(agent.policies)
 
-        G = compute_risk_G(qs, B, C, policies)
+        G = compute_risk_G(qs, B, C, policies, qs_other=qs_other)
 
         action_names = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
         print(f"\nDiagonal goal test:")
