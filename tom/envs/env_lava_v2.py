@@ -143,8 +143,8 @@ class LavaV2Env:
         for agent_id, action in actions.items():
             next_pos[agent_id] = self._apply_action(current_pos[agent_id], action)
 
-        # Check for collisions
-        collision = self._check_collision(next_pos)
+        # Check for collisions (both same-cell and edge collisions)
+        collision = self._check_collision(current_pos, next_pos)
 
         # Check for lava hits
         lava_hits = {}
@@ -221,10 +221,54 @@ class LavaV2Env:
         """Check if position is safe (not lava)."""
         return pos in self.safe_cells_set
 
-    def _check_collision(self, positions: Dict[int, Tuple[int, int]]) -> bool:
-        """Check if any agents are at the same position."""
-        pos_list = list(positions.values())
-        return len(pos_list) != len(set(pos_list))
+    def _check_collision(
+        self,
+        current_positions: Dict[int, Tuple[int, int]],
+        next_positions: Dict[int, Tuple[int, int]]
+    ) -> bool:
+        """
+        Check if any agents collide.
+
+        Two types of collisions:
+        1. Same-cell collision: Agents occupy the same cell after movement
+        2. Edge collision (swap): Agents swap positions by traversing the same edge
+
+        Parameters
+        ----------
+        current_positions : Dict[int, Tuple[int, int]]
+            Positions before the step
+        next_positions : Dict[int, Tuple[int, int]]
+            Positions after the step
+
+        Returns
+        -------
+        collision : bool
+            True if any collision detected
+        """
+        # Check same-cell collision
+        pos_list = list(next_positions.values())
+        if len(pos_list) != len(set(pos_list)):
+            return True
+
+        # Check edge collision (swap)
+        # If agent i moves from A to B and agent j moves from B to A,
+        # they traverse the same edge in opposite directions -> collision
+        agent_ids = list(current_positions.keys())
+        for i in range(len(agent_ids)):
+            for j in range(i + 1, len(agent_ids)):
+                id_i = agent_ids[i]
+                id_j = agent_ids[j]
+
+                curr_i = current_positions[id_i]
+                curr_j = current_positions[id_j]
+                next_i = next_positions[id_i]
+                next_j = next_positions[id_j]
+
+                # Check if agents swapped positions
+                if curr_i == next_j and curr_j == next_i:
+                    return True
+
+        return False
 
     def _get_observations(self, positions: Dict[int, Tuple[int, int]]) -> Dict:
         """

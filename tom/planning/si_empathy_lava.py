@@ -175,85 +175,114 @@ def _epistemic_info_gain(
     return float(info_gain)
 
 
-def _expected_location_utility(
-    qs: np.ndarray,
-    A: np.ndarray,
-    C: np.ndarray,
-) -> float:
-    """
-    Compute expected pragmatic utility from location_obs at one step:
-
-        E_o[C(o)] with o ~ A @ qs
-
-    Parameters
-    ----------
-    qs : (num_states,)
-        Belief over states.
-    A : (num_obs, num_states)
-        Observation model for location_obs.
-    C : (num_obs,)
-        Preferences over location observations.
-
-    Returns
-    -------
-    expected_utility : float
-    """
-    obs_dist = A @ qs
-    return float((obs_dist * C).sum())
-
-
-def _expected_collision_utility(
+def _expected_pragmatic_utility(
     qs_self: np.ndarray,
     qs_other: np.ndarray,
-    C_relation: np.ndarray,
+    action_self: int,
+    action_other: int,
+    A_loc: np.ndarray,
+    C_loc: np.ndarray,
+    A_edge: np.ndarray,
+    C_edge: np.ndarray,
+    A_cell_collision: np.ndarray,
+    C_cell_collision: np.ndarray,
+    A_edge_collision: np.ndarray,
+    C_edge_collision: np.ndarray,
 ) -> float:
     """
-    Compute expected relational utility due to collision at one step.
+    Compute expected pragmatic utility over ALL observation modalities.
 
-    We approximate the joint belief as factorised:
-        q(s_self, s_other) ≈ q_self(s_self) * q_other(s_other)
+    In active inference, pragmatic value = Σ_m E[C_m(o_m)]
+    where we sum expected utility over all modalities.
 
-    Then:
-        p_same_cell = sum_s q_self(s) * q_other(s)
-
-    We currently use the C_relation[2] (same cell) category only; C_relation[1]
-    (same row) could be added similarly if desired.
+    Modalities:
+    1. location_obs: E[C_loc(o)] = (A_loc @ qs_self) · C_loc
+    2. edge_obs: E[C_edge(e)] = (A_edge[:,:,action_self] @ qs_self) · C_edge
+    3. cell_collision_obs: Marginalize A over joint beliefs
+    4. edge_collision_obs: Marginalize A over joint beliefs and actions
 
     Parameters
     ----------
     qs_self : (num_states,)
-        Belief over own position.
+        Belief over own position
     qs_other : (num_states,)
-        Belief over other's position.
-    C_relation : (3,)
-        Relational preferences; index 2 corresponds to collision.
+        Belief over other's position
+    action_self : int
+        Own action
+    action_other : int
+        Other's action
+    A_loc : (num_obs, num_states)
+        Location observation model
+    C_loc : (num_obs,)
+        Location preferences
+    A_edge : (num_edges + 1, num_states, num_actions)
+        Edge observation model for self
+    C_edge : (num_edges + 1,)
+        Edge preferences
+    A_cell_collision : (2, num_states, num_states)
+        Cell collision observation model
+    C_cell_collision : (2,)
+        Cell collision preferences [no_collision, collision]
+    A_edge_collision : (2, num_states, num_states, num_actions, num_actions)
+        Edge collision observation model
+    C_edge_collision : (2,)
+        Edge collision preferences [no_edge_collision, edge_collision]
 
     Returns
     -------
-    expected_collision_utility : float
+    total_pragmatic : float
+        Sum of expected utilities over all modalities
     """
-    # Probability that both agents occupy the same cell
-    p_same_cell = float(np.dot(qs_self, qs_other))
-    # Collision utility
-    collision_utility = C_relation[2] * p_same_cell
-    # (We ignore same-row penalties for now; can be added later.)
-    return collision_utility
+    # 1. Location utility: E[C_loc(o)]
+    obs_dist = A_loc @ qs_self
+    location_utility = float((obs_dist * C_loc).sum())
+
+    # 2. Edge utility: E[C_edge(e)]
+    edge_dist = A_edge[:, :, action_self] @ qs_self
+    edge_utility = float((edge_dist * C_edge).sum())
+
+    # 3. Cell collision utility: E[C_cell_collision(o)]
+    # p(o | qs_self, qs_other) = Σ_{s_i, s_j} A[o, s_i, s_j] * qs_self[s_i] * qs_other[s_j]
+    # Using einsum for efficient marginalization
+    cell_obs_dist = np.einsum('oij,i,j->o', A_cell_collision, qs_self, qs_other)
+    cell_collision_utility = float((cell_obs_dist * C_cell_collision).sum())
+
+    # 4. Edge collision utility: E[C_edge_collision(o)]
+    # p(o | qs_self, qs_other, a_self, a_other) = Σ_{s_i, s_j} A[o, s_i, s_j, a_self, a_other] * qs_self[s_i] * qs_other[s_j]
+    # Extract the slice for the specific actions
+    A_edge_coll_slice = A_edge_collision[:, :, :, action_self, action_other]
+    edge_coll_obs_dist = np.einsum('oij,i,j->o', A_edge_coll_slice, qs_self, qs_other)
+    edge_collision_utility = float((edge_coll_obs_dist * C_edge_collision).sum())
+
+    # Total pragmatic utility (sum over all modalities)
+    total = location_utility + edge_utility + cell_collision_utility + edge_collision_utility
+    return float(total)
 
 
 def compute_empathic_G(
     qs_i: np.ndarray,
     B_i: np.ndarray,
+    A_i_loc: np.ndarray,
     C_i_loc: np.ndarray,
-    C_i_rel: np.ndarray,
+    A_i_edge: np.ndarray,
+    C_i_edge: np.ndarray,
+    A_i_cell_collision: np.ndarray,
+    C_i_cell_collision: np.ndarray,
+    A_i_edge_collision: np.ndarray,
+    C_i_edge_collision: np.ndarray,
     policies_i: np.ndarray,
     qs_j: np.ndarray,
     B_j: np.ndarray,
+    A_j_loc: np.ndarray,
     C_j_loc: np.ndarray,
-    C_j_rel: np.ndarray,
+    A_j_edge: np.ndarray,
+    C_j_edge: np.ndarray,
+    A_j_cell_collision: np.ndarray,
+    C_j_cell_collision: np.ndarray,
+    A_j_edge_collision: np.ndarray,
+    C_j_edge_collision: np.ndarray,
     policies_j: np.ndarray,
     alpha: float,
-    A_i: np.ndarray,
-    A_j: np.ndarray,
     epistemic_scale: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -262,27 +291,25 @@ def compute_empathic_G(
     For each candidate policy π_i:
 
         Initialise beliefs:
-            q_i^0 = qs_i
-            q_j^0 = qs_j
+            q_i^0 = qs_i, q_j^0 = qs_j
 
         For t = 0..H-1:
             1. i takes action a_i^t (from π_i):
                q_i^{t+1} = B_i(q_i^t, q_j^t, a_i^t)
 
-            2. Compute i's pragmatic + epistemic + collision contributions for this step:
-               - pragmatic: E_o[C_i_loc(o)] where o ~ A_i @ q_i^{t+1}
-               - epistemic: expected information gain from A_i (prior q_i^t)
-               - collision: C_i_rel[2] * p(collision) with p(collision) ≈ Σ_s q_i^{t+1}(s) q_j^t(s)
+            2. Compute i's EFE:
+               - pragmatic: Σ_modality E[C(o)] over location, edge, cell_collision (no edge collision)
+               - epistemic: expected information gain from A_i_loc
+               - G_i_step = -pragmatic - epistemic_scale * epistemic
 
-            3. Theory of Mind: j best-responds my predicted move.
+            3. Theory of Mind: j best-responds to i's predicted move.
                For each primitive action a_j:
                    q_j' = B_j(q_j^t, q_i^{t+1}, a_j)
-                   pragmatic_j = E_o[C_j_loc(o)] where o ~ A_j @ q_j'
-                   epistemic_j = info gain from A_j (prior q_j^t)
-                   collision_j = C_j_rel[2] * p(collision) with same p(collision)
-                   G_j(a_j) = -pragmatic_j - epistemic_scale * epistemic_j - collision_j
+                   pragmatic_j = Σ_modality E[C(o)] over ALL modalities (including edge collision)
+                   epistemic_j = info gain from A_j_loc
+                   G_j(a_j) = -pragmatic_j - epistemic_scale * epistemic_j
 
-               Choose best a_j^t = argmin_a_j G_j(a_j) and accumulate G_j_best += G_j(a_j^t).
+               Choose best a_j^t = argmin_a_j G_j(a_j).
                Update q_j^{t+1} using that best action.
 
         Then:
@@ -294,19 +321,37 @@ def compute_empathic_G(
 
     Parameters
     ----------
-    qs_i, B_i, C_i_loc, C_i_rel, policies_i, A_i
-        Agent i's components
-    qs_j, B_j, C_j_loc, C_j_rel, policies_j, A_j
-        Agent j's components
+    qs_i, qs_j : np.ndarray
+        Beliefs over own/other agent's position
+    B_i, B_j : np.ndarray
+        Transition models
+    A_i_loc, A_j_loc : np.ndarray
+        Location observation models
+    C_i_loc, C_j_loc : np.ndarray
+        Location preferences
+    A_i_edge, A_j_edge : np.ndarray
+        Edge observation models (num_edges + 1, num_states, num_actions)
+    C_i_edge, C_j_edge : np.ndarray
+        Edge preferences
+    A_i_cell_collision, A_j_cell_collision : np.ndarray
+        Cell collision observation models (2, num_states, num_states)
+    C_i_cell_collision, C_j_cell_collision : np.ndarray
+        Cell collision preferences (binary)
+    A_i_edge_collision, A_j_edge_collision : np.ndarray
+        Edge collision observation models (2, num_states, num_states, num_actions, num_actions)
+    C_i_edge_collision, C_j_edge_collision : np.ndarray
+        Edge collision preferences (binary)
+    policies_i, policies_j : np.ndarray
+        Policy sets
     alpha : float
         Empathy weight ∈ [0, 1]
     epistemic_scale : float
-        Weight on epistemic value term (η)
+        Weight on epistemic value term
 
     Returns
     -------
     G_i : (num_policies,)
-        Agent i's full EFE (risk + epistemic + collision) for each policy.
+        Agent i's full EFE for each policy.
     G_j_best_response : (num_policies,)
         j's best-response EFE for each i-policy.
     G_social : (num_policies,)
@@ -336,26 +381,36 @@ def compute_empathic_G(
             # --- i's action and belief propagation ---
             qs_i_next = _propagate_belief(qs_i_t, B_i, a_i_t, qs_other=qs_j_t)
 
-            # --- i's pragmatic utility from location_obs ---
-            pragmatic_i = _expected_location_utility(qs_i_next, A_i, C_i_loc)
+            # --- i's pragmatic utility (all modalities except edge collision) ---
+            # Note: We can't include edge collision here because we don't know j's action yet
+            # Edge collision requires knowing BOTH agents' actions simultaneously
+            # So we pass a dummy action and zero out the edge collision preferences
+            pragmatic_i = _expected_pragmatic_utility(
+                qs_self=qs_i_next,
+                qs_other=qs_j_t,
+                action_self=a_i_t,
+                action_other=4,  # Dummy action (STAY) since we don't know j's action
+                A_loc=A_i_loc,
+                C_loc=C_i_loc,
+                A_edge=A_i_edge,
+                C_edge=C_i_edge,
+                A_cell_collision=A_i_cell_collision,
+                C_cell_collision=C_i_cell_collision,
+                A_edge_collision=A_i_edge_collision,
+                C_edge_collision=np.array([0.0, 0.0]),  # Zero out edge collision for i's own EFE
+            )
 
-            # --- i's epistemic value (info gain) from A_i ---
-            info_gain_i = _epistemic_info_gain(qs_i_t, A_i, eps=eps)
-
-            # --- i's expected collision utility ---
-            collision_utility_i = _expected_collision_utility(qs_i_next, qs_j_t, C_i_rel)
+            # --- i's epistemic value (info gain) ---
+            info_gain_i = _epistemic_info_gain(qs_i_t, A_i_loc, eps=eps)
 
             # One-step EFE contribution for i:
-            # G_i_step = -pragmatic_i - epistemic_scale * info_gain_i - collision_utility_i
-            G_i_step = (
-                -pragmatic_i
-                - epistemic_scale * info_gain_i
-                - collision_utility_i
-            )
+            # G_i_step = -pragmatic_i - epistemic_scale * info_gain_i
+            G_i_step = -pragmatic_i - epistemic_scale * info_gain_i
             total_G_i += G_i_step
 
             # --- Theory of Mind: j best-responds to i's predicted move ---
             # For j, we consider one-step policies given current beliefs.
+            # Here we CAN include edge collision because we know both i's action (a_i_t) and j's candidate action (a_j)
             G_j_actions = []
             for policy_j in policies_j:
                 a_j = int(policy_j[0, 0])
@@ -363,20 +418,28 @@ def compute_empathic_G(
                 # Propagate j under candidate action a_j, conditioned on i's new position
                 qs_j_pred = _propagate_belief(qs_j_t, B_j, a_j, qs_other=qs_i_next)
 
-                # Pragmatic utility for j
-                pragmatic_j = _expected_location_utility(qs_j_pred, A_j, C_j_loc)
+                # Pragmatic utility for j (includes ALL modalities including edge collision)
+                # Now we know both actions (i's committed a_i_t and j's candidate a_j)
+                pragmatic_j = _expected_pragmatic_utility(
+                    qs_self=qs_j_pred,
+                    qs_other=qs_i_next,
+                    action_self=a_j,
+                    action_other=a_i_t,  # We know i's committed action
+                    A_loc=A_j_loc,
+                    C_loc=C_j_loc,
+                    A_edge=A_j_edge,
+                    C_edge=C_j_edge,
+                    A_cell_collision=A_j_cell_collision,
+                    C_cell_collision=C_j_cell_collision,
+                    A_edge_collision=A_j_edge_collision,
+                    C_edge_collision=C_j_edge_collision,  # Include edge collision for j's response
+                )
 
                 # Epistemic value for j
-                info_gain_j = _epistemic_info_gain(qs_j_t, A_j, eps=eps)
+                info_gain_j = _epistemic_info_gain(qs_j_t, A_j_loc, eps=eps)
 
-                # Collision utility for j (same p(collision) approximation)
-                collision_utility_j = _expected_collision_utility(qs_j_pred, qs_i_next, C_j_rel)
-
-                G_j_a = (
-                    -pragmatic_j
-                    - epistemic_scale * info_gain_j
-                    - collision_utility_j
-                )
+                # EFE for this action
+                G_j_a = -pragmatic_j - epistemic_scale * info_gain_j
                 G_j_actions.append(G_j_a)
 
             G_j_actions = np.asarray(G_j_actions)
@@ -527,17 +590,27 @@ class EmpathicLavaPlanner:
         """
         # Extract agent i's model components
         B_i = np.asarray(self.agent_i.B["location_state"])
+        A_i_loc = np.asarray(self.agent_i.A["location_obs"])
         C_i_loc = np.asarray(self.agent_i.C["location_obs"])
-        C_i_rel = np.asarray(self.agent_i.C["relation_obs"])
-        A_i = np.asarray(self.agent_i.A["location_obs"])
+        A_i_edge = np.asarray(self.agent_i.A["edge_obs"])
+        C_i_edge = np.asarray(self.agent_i.C["edge_obs"])
+        A_i_cell_collision = np.asarray(self.agent_i.A["cell_collision_obs"])
+        C_i_cell_collision = np.asarray(self.agent_i.C["cell_collision_obs"])
+        A_i_edge_collision = np.asarray(self.agent_i.A["edge_collision_obs"])
+        C_i_edge_collision = np.asarray(self.agent_i.C["edge_collision_obs"])
         policies_i = np.asarray(self.agent_i.policies)
         gamma = self.agent_i.gamma
 
         # Extract agent j's model components
         B_j = np.asarray(self.agent_j.B["location_state"])
+        A_j_loc = np.asarray(self.agent_j.A["location_obs"])
         C_j_loc = np.asarray(self.agent_j.C["location_obs"])
-        C_j_rel = np.asarray(self.agent_j.C["relation_obs"])
-        A_j = np.asarray(self.agent_j.A["location_obs"])
+        A_j_edge = np.asarray(self.agent_j.A["edge_obs"])
+        C_j_edge = np.asarray(self.agent_j.C["edge_obs"])
+        A_j_cell_collision = np.asarray(self.agent_j.A["cell_collision_obs"])
+        C_j_cell_collision = np.asarray(self.agent_j.C["cell_collision_obs"])
+        A_j_edge_collision = np.asarray(self.agent_j.A["edge_collision_obs"])
+        C_j_edge_collision = np.asarray(self.agent_j.C["edge_collision_obs"])
         policies_j = np.asarray(self.agent_j.policies)
 
         # Compute empathic EFE (dispatch to JAX or NumPy)
@@ -547,9 +620,17 @@ class EmpathicLavaPlanner:
 
                 # Use JAX-accelerated version (50-100x faster)
                 G_i, G_j, G_social = compute_empathic_G_jax(
-                    qs_i, B_i, C_i_loc, C_i_rel, policies_i,
-                    qs_j, B_j, C_j_loc, C_j_rel, policies_j,
-                    self.alpha, A_i, A_j,
+                    qs_i, B_i,
+                    A_i_loc, C_i_loc, A_i_edge, C_i_edge,
+                    A_i_cell_collision, C_i_cell_collision,
+                    A_i_edge_collision, C_i_edge_collision,
+                    policies_i,
+                    qs_j, B_j,
+                    A_j_loc, C_j_loc, A_j_edge, C_j_edge,
+                    A_j_cell_collision, C_j_cell_collision,
+                    A_j_edge_collision, C_j_edge_collision,
+                    policies_j,
+                    self.alpha,
                     epistemic_scale=self.epistemic_scale,
                 )
             except ImportError as e:
@@ -561,17 +642,33 @@ class EmpathicLavaPlanner:
                     RuntimeWarning
                 )
                 G_i, G_j, G_social = compute_empathic_G(
-                    qs_i, B_i, C_i_loc, C_i_rel, policies_i,
-                    qs_j, B_j, C_j_loc, C_j_rel, policies_j,
-                    self.alpha, A_i, A_j,
+                    qs_i, B_i,
+                    A_i_loc, C_i_loc, A_i_edge, C_i_edge,
+                    A_i_cell_collision, C_i_cell_collision,
+                    A_i_edge_collision, C_i_edge_collision,
+                    policies_i,
+                    qs_j, B_j,
+                    A_j_loc, C_j_loc, A_j_edge, C_j_edge,
+                    A_j_cell_collision, C_j_cell_collision,
+                    A_j_edge_collision, C_j_edge_collision,
+                    policies_j,
+                    self.alpha,
                     epistemic_scale=self.epistemic_scale,
                 )
         else:
             # Use NumPy version explicitly
             G_i, G_j, G_social = compute_empathic_G(
-                qs_i, B_i, C_i_loc, C_i_rel, policies_i,
-                qs_j, B_j, C_j_loc, C_j_rel, policies_j,
-                self.alpha, A_i, A_j,
+                qs_i, B_i,
+                A_i_loc, C_i_loc, A_i_edge, C_i_edge,
+                A_i_cell_collision, C_i_cell_collision,
+                A_i_edge_collision, C_i_edge_collision,
+                policies_i,
+                qs_j, B_j,
+                A_j_loc, C_j_loc, A_j_edge, C_j_edge,
+                A_j_cell_collision, C_j_cell_collision,
+                A_j_edge_collision, C_j_edge_collision,
+                policies_j,
+                self.alpha,
                 epistemic_scale=self.epistemic_scale,
             )
 

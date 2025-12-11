@@ -76,33 +76,82 @@ def propagate_belief_jax(
 
 
 @jax.jit
-def expected_location_utility_jax(
-    qs: jnp.ndarray,
-    A: jnp.ndarray,
-    C: jnp.ndarray,
+def expected_pragmatic_utility_jax(
+    qs_self: jnp.ndarray,
+    qs_other: jnp.ndarray,
+    action_self: int,
+    action_other: int,
+    A_loc: jnp.ndarray,
+    C_loc: jnp.ndarray,
+    A_edge: jnp.ndarray,
+    C_edge: jnp.ndarray,
+    A_cell_collision: jnp.ndarray,
+    C_cell_collision: jnp.ndarray,
+    A_edge_collision: jnp.ndarray,
+    C_edge_collision: jnp.ndarray,
 ) -> float:
     """
-    Compute expected pragmatic utility from location observations.
+    JAX-compiled pragmatic utility over ALL observation modalities.
 
-    E[U] = E_o[C(o)] where o ~ A @ qs
+    Modalities:
+    1. location_obs: E[C_loc(o)]
+    2. edge_obs: E[C_edge(e)]
+    3. cell_collision_obs: Marginalize A over joint beliefs
+    4. edge_collision_obs: Marginalize A over joint beliefs and actions
 
     Parameters
     ----------
-    qs : jnp.ndarray
-        Belief over states [num_states]
-    A : jnp.ndarray
-        Observation model [num_obs, num_states]
-    C : jnp.ndarray
-        Preferences over observations [num_obs]
+    qs_self : jnp.ndarray
+        Belief over own position [num_states]
+    qs_other : jnp.ndarray
+        Belief over other's position [num_states]
+    action_self : int
+        Own action
+    action_other : int
+        Other's action
+    A_loc : jnp.ndarray
+        Location observation model [num_obs, num_states]
+    C_loc : jnp.ndarray
+        Location preferences [num_obs]
+    A_edge : jnp.ndarray
+        Edge observation model [num_edges + 1, num_states, num_actions]
+    C_edge : jnp.ndarray
+        Edge preferences [num_edges + 1]
+    A_cell_collision : jnp.ndarray
+        Cell collision observation model [2, num_states, num_states]
+    C_cell_collision : jnp.ndarray
+        Cell collision preferences [2]
+    A_edge_collision : jnp.ndarray
+        Edge collision observation model [2, num_states, num_states, num_actions, num_actions]
+    C_edge_collision : jnp.ndarray
+        Edge collision preferences [2]
 
     Returns
     -------
-    utility : float
+    total_pragmatic : float
         Expected utility
     """
-    obs_dist = A @ qs
-    utility = (obs_dist * C).sum()
-    return utility
+    # 1. Location utility
+    obs_dist = A_loc @ qs_self
+    location_utility = (obs_dist * C_loc).sum()
+
+    # 2. Edge utility
+    edge_dist = A_edge[:, :, action_self] @ qs_self
+    edge_utility = (edge_dist * C_edge).sum()
+
+    # 3. Cell collision utility: marginalize over joint states
+    # p(o | qs_self, qs_other) = Σ_{s_i, s_j} A[o, s_i, s_j] * qs_self[s_i] * qs_other[s_j]
+    cell_obs_dist = jnp.einsum('oij,i,j->o', A_cell_collision, qs_self, qs_other)
+    cell_collision_utility = (cell_obs_dist * C_cell_collision).sum()
+
+    # 4. Edge collision utility: marginalize over joint states and actions
+    A_edge_coll_slice = A_edge_collision[:, :, :, action_self, action_other]
+    edge_coll_obs_dist = jnp.einsum('oij,i,j->o', A_edge_coll_slice, qs_self, qs_other)
+    edge_collision_utility = (edge_coll_obs_dist * C_edge_collision).sum()
+
+    # Total pragmatic utility
+    total = location_utility + edge_utility + cell_collision_utility + edge_collision_utility
+    return total
 
 
 @jax.jit
@@ -155,43 +204,6 @@ def epistemic_info_gain_jax(
     return info_gain
 
 
-@jax.jit
-def expected_collision_utility_jax(
-    qs_self: jnp.ndarray,
-    qs_other: jnp.ndarray,
-    C_relation: jnp.ndarray,
-) -> float:
-    """
-    Compute expected collision utility.
-
-    Approximates joint belief as factorized:
-        q(s_self, s_other) ≈ q_self(s_self) * q_other(s_other)
-
-    Then:
-        p_collision = Σ_s q_self(s) * q_other(s)
-        U_collision = C_relation[2] * p_collision
-
-    Parameters
-    ----------
-    qs_self : jnp.ndarray
-        Belief over own position [num_states]
-    qs_other : jnp.ndarray
-        Belief over other's position [num_states]
-    C_relation : jnp.ndarray
-        Relational preferences [3] (0=different rows, 1=same row, 2=collision)
-
-    Returns
-    -------
-    collision_utility : float
-        Expected collision utility
-    """
-    # Probability both agents in same cell
-    p_same_cell = jnp.dot(qs_self, qs_other)
-
-    # Collision utility (C_relation[2] is collision penalty)
-    collision_utility = C_relation[2] * p_same_cell
-
-    return collision_utility
 
 
 # =============================================================================
@@ -202,10 +214,16 @@ def expected_collision_utility_jax(
 def compute_j_best_response_jax(
     qs_j: jnp.ndarray,
     qs_i_next: jnp.ndarray,
+    action_i: int,
     B_j: jnp.ndarray,
-    A_j: jnp.ndarray,
+    A_j_loc: jnp.ndarray,
     C_j_loc: jnp.ndarray,
-    C_j_rel: jnp.ndarray,
+    A_j_edge: jnp.ndarray,
+    C_j_edge: jnp.ndarray,
+    A_j_cell_collision: jnp.ndarray,
+    C_j_cell_collision: jnp.ndarray,
+    A_j_edge_collision: jnp.ndarray,
+    C_j_edge_collision: jnp.ndarray,
     actions_j: jnp.ndarray,
     epistemic_scale: float,
     eps: float = 1e-16,
@@ -226,14 +244,14 @@ def compute_j_best_response_jax(
         j's current belief [num_states]
     qs_i_next : jnp.ndarray
         i's predicted next belief [num_states]
+    action_i : int
+        i's committed action
     B_j : jnp.ndarray
         j's transition model
-    A_j : jnp.ndarray
-        j's observation model
-    C_j_loc : jnp.ndarray
-        j's location preferences
-    C_j_rel : jnp.ndarray
-        j's relational preferences
+    A_j_loc, A_j_edge, A_j_cell_collision, A_j_edge_collision : jnp.ndarray
+        j's observation models
+    C_j_loc, C_j_edge, C_j_cell_collision, C_j_edge_collision : jnp.ndarray
+        j's preferences
     actions_j : jnp.ndarray
         Array of j's primitive actions [num_actions]
     epistemic_scale : float
@@ -250,21 +268,31 @@ def compute_j_best_response_jax(
     """
 
     # Compute G_j for each action (vectorized!)
-    def compute_G_for_action(action):
+    def compute_G_for_action(action_j):
         # Propagate j's belief
-        qs_j_pred = propagate_belief_jax(qs_j, B_j, action, qs_other=qs_i_next, eps=eps)
+        qs_j_pred = propagate_belief_jax(qs_j, B_j, action_j, qs_other=qs_i_next, eps=eps)
 
-        # Pragmatic utility
-        pragmatic = expected_location_utility_jax(qs_j_pred, A_j, C_j_loc)
+        # Pragmatic utility (all modalities including edge collision)
+        pragmatic = expected_pragmatic_utility_jax(
+            qs_self=qs_j_pred,
+            qs_other=qs_i_next,
+            action_self=action_j,
+            action_other=action_i,
+            A_loc=A_j_loc,
+            C_loc=C_j_loc,
+            A_edge=A_j_edge,
+            C_edge=C_j_edge,
+            A_cell_collision=A_j_cell_collision,
+            C_cell_collision=C_j_cell_collision,
+            A_edge_collision=A_j_edge_collision,
+            C_edge_collision=C_j_edge_collision,
+        )
 
         # Epistemic value
-        epistemic = epistemic_info_gain_jax(qs_j, A_j, eps=eps)
+        epistemic = epistemic_info_gain_jax(qs_j, A_j_loc, eps=eps)
 
-        # Collision utility
-        collision = expected_collision_utility_jax(qs_j_pred, qs_i_next, C_j_rel)
-
-        # EFE (note: pragmatic and collision are utilities, so negate)
-        G_j = -pragmatic - epistemic_scale * epistemic - collision
+        # EFE
+        G_j = -pragmatic - epistemic_scale * epistemic
 
         return G_j
 
@@ -289,13 +317,23 @@ def rollout_one_policy_jax(
     qs_i_init: jnp.ndarray,
     qs_j_init: jnp.ndarray,
     B_i: jnp.ndarray,
-    A_i: jnp.ndarray,
+    A_i_loc: jnp.ndarray,
     C_i_loc: jnp.ndarray,
-    C_i_rel: jnp.ndarray,
+    A_i_edge: jnp.ndarray,
+    C_i_edge: jnp.ndarray,
+    A_i_cell_collision: jnp.ndarray,
+    C_i_cell_collision: jnp.ndarray,
+    A_i_edge_collision: jnp.ndarray,
+    C_i_edge_collision: jnp.ndarray,
     B_j: jnp.ndarray,
-    A_j: jnp.ndarray,
+    A_j_loc: jnp.ndarray,
     C_j_loc: jnp.ndarray,
-    C_j_rel: jnp.ndarray,
+    A_j_edge: jnp.ndarray,
+    C_j_edge: jnp.ndarray,
+    A_j_cell_collision: jnp.ndarray,
+    C_j_cell_collision: jnp.ndarray,
+    A_j_edge_collision: jnp.ndarray,
+    C_j_edge_collision: jnp.ndarray,
     actions_j: jnp.ndarray,
     epistemic_scale: float,
     eps: float = 1e-16,
@@ -332,10 +370,22 @@ def rollout_one_policy_jax(
         i's initial belief [num_states]
     qs_j_init : jnp.ndarray
         j's initial belief [num_states]
-    B_i, A_i, C_i_loc, C_i_rel
-        i's model components
-    B_j, A_j, C_j_loc, C_j_rel
-        j's model components
+    B_i : jnp.ndarray
+        i's transition model
+    A_i_loc, C_i_loc, A_i_edge, C_i_edge : jnp.ndarray
+        i's observation models and preferences
+    A_i_cell_collision, C_i_cell_collision : jnp.ndarray
+        i's cell collision model and preferences
+    A_i_edge_collision, C_i_edge_collision : jnp.ndarray
+        i's edge collision model and preferences
+    B_j : jnp.ndarray
+        j's transition model
+    A_j_loc, C_j_loc, A_j_edge, C_j_edge : jnp.ndarray
+        j's observation models and preferences
+    A_j_cell_collision, C_j_cell_collision : jnp.ndarray
+        j's cell collision model and preferences
+    A_j_edge_collision, C_j_edge_collision : jnp.ndarray
+        j's edge collision model and preferences
     actions_j : jnp.ndarray
         j's primitive actions [num_actions]
     epistemic_scale : float
@@ -365,15 +415,31 @@ def rollout_one_policy_jax(
         qs_i_next = propagate_belief_jax(qs_i, B_i, action_i, qs_other=qs_j, eps=eps)
 
         # --- i's EFE components ---
-        pragmatic_i = expected_location_utility_jax(qs_i_next, A_i, C_i_loc)
-        epistemic_i = epistemic_info_gain_jax(qs_i, A_i, eps=eps)
-        collision_i = expected_collision_utility_jax(qs_i_next, qs_j, C_i_rel)
+        # Note: Zero out edge collision for i (we don't know j's action yet)
+        pragmatic_i = expected_pragmatic_utility_jax(
+            qs_self=qs_i_next,
+            qs_other=qs_j,
+            action_self=action_i,
+            action_other=4,  # Dummy action (STAY)
+            A_loc=A_i_loc,
+            C_loc=C_i_loc,
+            A_edge=A_i_edge,
+            C_edge=C_i_edge,
+            A_cell_collision=A_i_cell_collision,
+            C_cell_collision=C_i_cell_collision,
+            A_edge_collision=A_i_edge_collision,
+            C_edge_collision=jnp.array([0.0, 0.0]),  # Zero out edge collision
+        )
+        epistemic_i = epistemic_info_gain_jax(qs_i, A_i_loc, eps=eps)
 
-        G_i_step = -pragmatic_i - epistemic_scale * epistemic_i - collision_i
+        G_i_step = -pragmatic_i - epistemic_scale * epistemic_i
 
         # --- j best-responds (vectorized over all j actions!) ---
         G_j_best, best_action_j = compute_j_best_response_jax(
-            qs_j, qs_i_next, B_j, A_j, C_j_loc, C_j_rel,
+            qs_j, qs_i_next, action_i,
+            B_j, A_j_loc, C_j_loc, A_j_edge, C_j_edge,
+            A_j_cell_collision, C_j_cell_collision,
+            A_j_edge_collision, C_j_edge_collision,
             actions_j, epistemic_scale, eps
         )
 
@@ -411,8 +477,31 @@ def rollout_one_policy_jax(
 # Vectorized version over all i policies
 rollout_all_policies_jax = jax.jit(vmap(
     rollout_one_policy_jax,
-    in_axes=(0, None, None, None, None, None, None, None, None, None, None, None, None)
-    # vmap over policies (axis 0), everything else broadcasted
+    in_axes=(
+        0,     # policy_i - vmap over policies
+        None,  # qs_i_init
+        None,  # qs_j_init
+        None,  # B_i
+        None,  # A_i_loc
+        None,  # C_i_loc
+        None,  # A_i_edge
+        None,  # C_i_edge
+        None,  # A_i_cell_collision
+        None,  # C_i_cell_collision
+        None,  # A_i_edge_collision
+        None,  # C_i_edge_collision
+        None,  # B_j
+        None,  # A_j_loc
+        None,  # C_j_loc
+        None,  # A_j_edge
+        None,  # C_j_edge
+        None,  # A_j_cell_collision
+        None,  # C_j_cell_collision
+        None,  # A_j_edge_collision
+        None,  # C_j_edge_collision
+        None,  # actions_j
+        None,  # epistemic_scale
+    )
     # Note: eps parameter uses default value, so not included in in_axes
 ))
 
@@ -420,17 +509,27 @@ rollout_all_policies_jax = jax.jit(vmap(
 def compute_empathic_G_jax(
     qs_i: np.ndarray,
     B_i: np.ndarray,
+    A_i_loc: np.ndarray,
     C_i_loc: np.ndarray,
-    C_i_rel: np.ndarray,
+    A_i_edge: np.ndarray,
+    C_i_edge: np.ndarray,
+    A_i_cell_collision: np.ndarray,
+    C_i_cell_collision: np.ndarray,
+    A_i_edge_collision: np.ndarray,
+    C_i_edge_collision: np.ndarray,
     policies_i: np.ndarray,
     qs_j: np.ndarray,
     B_j: np.ndarray,
+    A_j_loc: np.ndarray,
     C_j_loc: np.ndarray,
-    C_j_rel: np.ndarray,
+    A_j_edge: np.ndarray,
+    C_j_edge: np.ndarray,
+    A_j_cell_collision: np.ndarray,
+    C_j_cell_collision: np.ndarray,
+    A_j_edge_collision: np.ndarray,
+    C_j_edge_collision: np.ndarray,
     policies_j: np.ndarray,
     alpha: float,
-    A_i: np.ndarray,
-    A_j: np.ndarray,
     epistemic_scale: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -462,10 +561,28 @@ def compute_empathic_G_jax(
 
     Parameters
     ----------
-    qs_i, B_i, C_i_loc, C_i_rel, policies_i, A_i
-        Agent i's components
-    qs_j, B_j, C_j_loc, C_j_rel, policies_j, A_j
-        Agent j's components
+    qs_i, qs_j : np.ndarray
+        Beliefs over own/other positions
+    B_i, B_j : np.ndarray
+        Transition models
+    A_i_loc, A_j_loc : np.ndarray
+        Location observation models
+    C_i_loc, C_j_loc : np.ndarray
+        Location preferences
+    A_i_edge, A_j_edge : np.ndarray
+        Edge observation models
+    C_i_edge, C_j_edge : np.ndarray
+        Edge preferences
+    A_i_cell_collision, A_j_cell_collision : np.ndarray
+        Cell collision observation models
+    C_i_cell_collision, C_j_cell_collision : np.ndarray
+        Cell collision preferences
+    A_i_edge_collision, A_j_edge_collision : np.ndarray
+        Edge collision observation models
+    C_i_edge_collision, C_j_edge_collision : np.ndarray
+        Edge collision preferences
+    policies_i, policies_j : np.ndarray
+        Policy sets
     alpha : float
         Empathy weight ∈ [0, 1]
     epistemic_scale : float
@@ -485,12 +602,27 @@ def compute_empathic_G_jax(
     qs_j_jax = jnp.array(qs_j)
     B_i_jax = jnp.array(B_i)
     B_j_jax = jnp.array(B_j)
-    A_i_jax = jnp.array(A_i)
-    A_j_jax = jnp.array(A_j)
+
+    # Agent i A matrices and preferences
+    A_i_loc_jax = jnp.array(A_i_loc)
     C_i_loc_jax = jnp.array(C_i_loc)
-    C_i_rel_jax = jnp.array(C_i_rel)
+    A_i_edge_jax = jnp.array(A_i_edge)
+    C_i_edge_jax = jnp.array(C_i_edge)
+    A_i_cell_collision_jax = jnp.array(A_i_cell_collision)
+    C_i_cell_collision_jax = jnp.array(C_i_cell_collision)
+    A_i_edge_collision_jax = jnp.array(A_i_edge_collision)
+    C_i_edge_collision_jax = jnp.array(C_i_edge_collision)
+
+    # Agent j A matrices and preferences
+    A_j_loc_jax = jnp.array(A_j_loc)
     C_j_loc_jax = jnp.array(C_j_loc)
-    C_j_rel_jax = jnp.array(C_j_rel)
+    A_j_edge_jax = jnp.array(A_j_edge)
+    C_j_edge_jax = jnp.array(C_j_edge)
+    A_j_cell_collision_jax = jnp.array(A_j_cell_collision)
+    C_j_cell_collision_jax = jnp.array(C_j_cell_collision)
+    A_j_edge_collision_jax = jnp.array(A_j_edge_collision)
+    C_j_edge_collision_jax = jnp.array(C_j_edge_collision)
+
     policies_i_jax = jnp.array(policies_i, dtype=jnp.int32)
 
     # j's primitive actions (only consider first timestep of each policy)
@@ -503,13 +635,23 @@ def compute_empathic_G_jax(
         qs_i_jax,
         qs_j_jax,
         B_i_jax,
-        A_i_jax,
+        A_i_loc_jax,
         C_i_loc_jax,
-        C_i_rel_jax,
+        A_i_edge_jax,
+        C_i_edge_jax,
+        A_i_cell_collision_jax,
+        C_i_cell_collision_jax,
+        A_i_edge_collision_jax,
+        C_i_edge_collision_jax,
         B_j_jax,
-        A_j_jax,
+        A_j_loc_jax,
         C_j_loc_jax,
-        C_j_rel_jax,
+        A_j_edge_jax,
+        C_j_edge_jax,
+        A_j_cell_collision_jax,
+        C_j_cell_collision_jax,
+        A_j_edge_collision_jax,
+        C_j_edge_collision_jax,
         actions_j_jax,
         epistemic_scale,
     )

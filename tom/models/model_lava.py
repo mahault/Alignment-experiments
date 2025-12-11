@@ -50,13 +50,19 @@ class LavaModel:
     start_pos : tuple
         Starting position (x, y) for this agent's prior
     A : dict
-        Observation model {"location_obs", "other_location_obs", "relation_obs"}
+        Observation model with modalities:
+        - "location_obs": Own position (num_states observations)
+        - "edge_obs": Which edge traversing (num_edges + 1 observations)
+        - "cell_collision_obs": Binary {no_collision, collision}
+        - "edge_collision_obs": Binary {no_collision, collision}
     B : dict
         Transition model {"location_state": array}
     C : dict
-        Preference model {"location_obs", "other_location_obs", "relation_obs"}
+        Preference model with same keys as A
     D : dict
         Prior over initial state {"location_state": array}
+    num_edges : int
+        Total number of edges in the grid (computed automatically)
     """
     width: int = 4
     height: int = 3
@@ -91,40 +97,180 @@ class LavaModel:
         self.num_states = self.width * self.height
         self.num_obs = self.num_states
 
+        # Build edge mappings for edge collision detection
+        self._build_edge_mappings()
+
         # Build generative model components
         self.A = self._build_A()
         self.B = self._build_B()
         self.C = self._build_C()
         self.D = self._build_D()
 
+    def _build_edge_mappings(self):
+        """
+        Build edge index mappings for edge collision detection.
+
+        Each edge connects two adjacent cells. Edges are undirected (bidirectional).
+        We assign each edge a unique index.
+
+        Edge categories:
+        - Horizontal edges: connect cells (x, y) and (x+1, y)
+        - Vertical edges: connect cells (x, y) and (x, y+1)
+
+        Total edges = (width-1)*height + width*(height-1)
+
+        Creates:
+        - self.num_edges: Total number of edges
+        - self.edge_to_idx: Dict mapping (pos1, pos2) -> edge_idx (undirected)
+        - self.idx_to_edge: Dict mapping edge_idx -> (pos1, pos2)
+        - self.state_action_to_edge: Dict mapping (state, action) -> edge_idx or None
+        """
+        self.edge_to_idx = {}
+        self.idx_to_edge = {}
+        edge_idx = 0
+
+        # Horizontal edges (left-right)
+        for y in range(self.height):
+            for x in range(self.width - 1):
+                pos1 = (x, y)
+                pos2 = (x + 1, y)
+                # Store both directions mapping to same edge index
+                self.edge_to_idx[(pos1, pos2)] = edge_idx
+                self.edge_to_idx[(pos2, pos1)] = edge_idx
+                self.idx_to_edge[edge_idx] = (pos1, pos2)
+                edge_idx += 1
+
+        # Vertical edges (up-down)
+        for y in range(self.height - 1):
+            for x in range(self.width):
+                pos1 = (x, y)
+                pos2 = (x, y + 1)
+                # Store both directions mapping to same edge index
+                self.edge_to_idx[(pos1, pos2)] = edge_idx
+                self.edge_to_idx[(pos2, pos1)] = edge_idx
+                self.idx_to_edge[edge_idx] = (pos1, pos2)
+                edge_idx += 1
+
+        self.num_edges = edge_idx
+
+        # Build mapping from (state_idx, action) -> edge_idx
+        # This tells us which edge is traversed when taking an action from a state
+        self.state_action_to_edge = {}
+
+        def pos_to_idx(x, y):
+            return y * self.width + x
+
+        def idx_to_pos(idx):
+            y = idx // self.width
+            x = idx % self.width
+            return x, y
+
+        for state in range(self.num_states):
+            x, y = idx_to_pos(state)
+            pos_from = (x, y)
+
+            # For each action, determine which edge is traversed
+            for action in range(5):  # UP, DOWN, LEFT, RIGHT, STAY
+                x_to, y_to = x, y
+
+                if action == 0:  # UP
+                    y_to = max(0, y - 1)
+                elif action == 1:  # DOWN
+                    y_to = min(self.height - 1, y + 1)
+                elif action == 2:  # LEFT
+                    x_to = max(0, x - 1)
+                elif action == 3:  # RIGHT
+                    x_to = min(self.width - 1, x + 1)
+                elif action == 4:  # STAY
+                    # STAY action doesn't traverse any edge
+                    self.state_action_to_edge[(state, action)] = None
+                    continue
+
+                pos_to = (x_to, y_to)
+
+                # If action doesn't move (e.g., UP at top edge), no edge traversed
+                if pos_from == pos_to:
+                    self.state_action_to_edge[(state, action)] = None
+                else:
+                    # Get edge index for this transition
+                    edge_idx = self.edge_to_idx.get((pos_from, pos_to))
+                    self.state_action_to_edge[(state, action)] = edge_idx
+
     def _build_A(self):
         """
-        Build observation model - fully observable self and other.
+        Build observation model.
 
-        Three observation modalities:
-        1. location_obs: Agent's own position (one-hot over num_states)
-        2. other_location_obs: Other agent's position (one-hot over num_states)
-        3. relation_obs: Relational state (3 categories):
-           - 0: Different rows
-           - 1: Same row, different cells
-           - 2: Same cell (collision)
+        Observation modalities:
+        1. location_obs: Agent's own position (fully observable)
+           - Shape: (num_states, num_states) - identity matrix
 
-        For relation_obs, we keep A_relation as a placeholder zero-tensor;
-        the planner can compute the relational probabilities directly from
-        beliefs over self and other positions, and weight them using
-        C["relation_obs"].
+        2. edge_obs: Which edge is being traversed by this agent
+           - Shape: (num_edges + 1, num_states, num_actions)
+           - Index num_edges means "no edge" (STAY or boundary bounce)
+           - Maps (state, action) -> edge being traversed
+
+        3. cell_collision_obs: Whether agents occupy same cell (binary)
+           - Shape: (2, num_states, num_states) - maps from joint state
+           - A[0, s_i, s_j] = 1 if s_i != s_j (no collision)
+           - A[1, s_i, s_j] = 1 if s_i == s_j (collision)
+
+        4. edge_collision_obs: Whether agents traverse same edge (binary)
+           - Shape: (2, num_states, num_states, num_actions, num_actions)
+           - A[0, s_i, s_j, a_i, a_j] = 1 if no edge collision
+           - A[1, s_i, s_j, a_i, a_j] = 1 if both traverse same edge
+
+        Note: Collision A matrices map from joint states/actions to observations.
+        The planner marginalizes using beliefs over both agents' states.
         """
-        A_self = jnp.eye(self.num_obs, self.num_states)
-        A_other = jnp.eye(self.num_obs, self.num_states)  # Also fully observable
+        # Own location: fully observable
+        A_loc = jnp.eye(self.num_obs, self.num_states)
 
-        # For now, relation_obs uses a placeholder; the planner computes relation
-        # from joint beliefs q(s_self, s_other) and applies C_relation directly.
-        A_relation = jnp.zeros((3, self.num_states))
+        # Edge observation: deterministic mapping from (state, action) -> edge
+        num_actions = 5
+        A_edge = np.zeros((self.num_edges + 1, self.num_states, num_actions))
+
+        for state in range(self.num_states):
+            for action in range(num_actions):
+                edge_idx = self.state_action_to_edge.get((state, action))
+                if edge_idx is None:
+                    # No edge traversed (STAY or boundary bounce) -> maps to last index
+                    A_edge[self.num_edges, state, action] = 1.0
+                else:
+                    A_edge[edge_idx, state, action] = 1.0
+
+        # Cell collision observation model: (2, num_states, num_states)
+        # A[o, s_self, s_other] where o ∈ {no_collision, collision}
+        A_cell_collision = np.zeros((2, self.num_states, self.num_states))
+        for s_i in range(self.num_states):
+            for s_j in range(self.num_states):
+                if s_i == s_j:
+                    A_cell_collision[1, s_i, s_j] = 1.0  # Collision
+                else:
+                    A_cell_collision[0, s_i, s_j] = 1.0  # No collision
+
+        # Edge collision observation model: (2, num_states, num_states, num_actions, num_actions)
+        # A[o, s_self, s_other, a_self, a_other] where o ∈ {no_edge_collision, edge_collision}
+        A_edge_collision = np.zeros((2, self.num_states, self.num_states, num_actions, num_actions))
+
+        for s_i in range(self.num_states):
+            for s_j in range(self.num_states):
+                for a_i in range(num_actions):
+                    for a_j in range(num_actions):
+                        # Get edges traversed by each agent
+                        edge_i = self.state_action_to_edge.get((s_i, a_i))
+                        edge_j = self.state_action_to_edge.get((s_j, a_j))
+
+                        # Edge collision if both traverse same edge (and not None)
+                        if edge_i is not None and edge_j is not None and edge_i == edge_j:
+                            A_edge_collision[1, s_i, s_j, a_i, a_j] = 1.0  # Edge collision
+                        else:
+                            A_edge_collision[0, s_i, s_j, a_i, a_j] = 1.0  # No edge collision
 
         return {
-            "location_obs": A_self,
-            "other_location_obs": A_other,
-            "relation_obs": A_relation
+            "location_obs": A_loc,
+            "edge_obs": jnp.array(A_edge),
+            "cell_collision_obs": jnp.array(A_cell_collision),
+            "edge_collision_obs": jnp.array(A_edge_collision),
         }
 
     def _build_B(self):
@@ -198,19 +344,22 @@ class LavaModel:
         """
         Build preference model - goal positive, lava catastrophic, collisions avoided.
 
-        Three preference modalities:
+        Preference modalities:
         1. location_obs (own position):
-           - Goal: High reward (+10)
+           - Goal: High reward (+50)
            - Lava: CATASTROPHIC penalty (-100)
            - Safe cells: distance shaping + small time cost
 
-        2. other_location_obs (other agent's position):
-           - For now, neutral baseline (can be extended for proximity preferences).
+        2. edge_obs (which edge traversing):
+           - All edges: neutral (no inherent preference for specific edges)
 
-        3. relation_obs (relational state):
-           - 0 (different rows): neutral
-           - 1 (same row, different cells): mild penalty (turn-taking pressure)
-           - 2 (same cell): CATASTROPHIC penalty (collision)
+        3. cell_collision_obs (binary):
+           - Index 0 (no collision): neutral (0)
+           - Index 1 (collision): CATASTROPHIC penalty (-100)
+
+        4. edge_collision_obs (binary):
+           - Index 0 (no edge collision): neutral (0)
+           - Index 1 (edge collision/swap): CATASTROPHIC penalty (-100)
         """
         # Preferences over own location
         C_self = np.zeros(self.num_obs)
@@ -247,21 +396,27 @@ class LavaModel:
                 manhattan_dist = abs(x - self.goal_x) + abs(y - self.goal_y)
                 C_self[s] = -lambda_dist * manhattan_dist - time_cost
 
-        # Preferences over other agent's location
-        # For now: neutral everywhere. Collision/preference effects are handled
-        # via relation_obs, which depends on both agents' positions.
-        C_other = np.zeros(self.num_obs)
+        # Preferences over edge traversal
+        # Neutral for all edges (no preference for which edge to use)
+        C_edge = np.zeros(self.num_edges + 1)
 
-        # Preferences over relational state
-        C_relation = np.zeros(3)
-        C_relation[0] = 0.0    # Different rows: neutral (no lane bias)
-        C_relation[1] = 0.0    # Same row, different cells: NEUTRAL (removed lane bias)
-        C_relation[2] = -100.0  # Same cell (collision): catastrophic - ONLY this matters
+        # Preferences over cell collision (binary)
+        C_cell_collision = np.array([
+            0.0,    # Index 0: no cell collision - neutral
+            -100.0  # Index 1: cell collision - catastrophic penalty
+        ])
+
+        # Preferences over edge collision (binary)
+        C_edge_collision = np.array([
+            0.0,    # Index 0: no edge collision - neutral
+            -100.0  # Index 1: edge collision (swap) - catastrophic penalty
+        ])
 
         return {
             "location_obs": jnp.array(C_self),
-            "other_location_obs": jnp.array(C_other),
-            "relation_obs": jnp.array(C_relation),
+            "edge_obs": jnp.array(C_edge),
+            "cell_collision_obs": jnp.array(C_cell_collision),
+            "edge_collision_obs": jnp.array(C_edge_collision),
         }
 
     def _build_D(self):
