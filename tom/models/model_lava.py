@@ -70,6 +70,7 @@ class LavaModel:
     goal_y: int = None
     safe_cells: list = None  # Optional: List of (x,y) tuples that are safe
     start_pos: tuple = None  # Optional: Starting position for this agent
+    num_empathy_levels: int = 3  # Number of discrete empathy states (for inferring other's empathy)
 
     def __post_init__(self):
         if self.goal_x is None:
@@ -96,6 +97,10 @@ class LavaModel:
         self.safe_cells_set = set(self.safe_cells)
         self.num_states = self.width * self.height
         self.num_obs = self.num_states
+
+        # Discrete empathy levels for modeling beliefs about other agent's empathy
+        # Maps from index to actual empathy value: e.g., [0.0, 0.5, 1.0] for 3 levels
+        self.empathy_levels = np.linspace(0.0, 1.0, self.num_empathy_levels)
 
         # Build edge mappings for edge collision detection
         self._build_edge_mappings()
@@ -266,11 +271,18 @@ class LavaModel:
                         else:
                             A_edge_collision[0, s_i, s_j, a_i, a_j] = 1.0  # No edge collision
 
+        # Empathy observation model: identity matrix (perfect observation for now)
+        # Maps from hidden state (other agent's true empathy) to observation
+        # Shape: (num_empathy_levels, num_empathy_levels)
+        # Later this could be made noisy to model imperfect empathy inference
+        A_empathy = jnp.eye(self.num_empathy_levels)
+
         return {
             "location_obs": A_loc,
             "edge_obs": jnp.array(A_edge),
             "cell_collision_obs": jnp.array(A_cell_collision),
             "edge_collision_obs": jnp.array(A_edge_collision),
+            "empathy_obs": A_empathy,
         }
 
     def _build_B(self):
@@ -364,8 +376,9 @@ class LavaModel:
         # Preferences over own location
         C_self = np.zeros(self.num_obs)
 
-        # GOAL REWARD: Strong preference for reaching exact goal
-        goal_reward = 50.0  # Much stronger than original 10.0
+        # GOAL REWARD: Very strong preference for reaching exact goal
+        # Increased from 50 to make goal more appealing relative to collision costs (-30)
+        goal_reward = 80.0
 
         # Distance-based shaping: guides agent towards goal when unreachable within horizon
         # This is CRITICAL - without it, agents can't find the goal if it's >horizon steps away
@@ -401,22 +414,30 @@ class LavaModel:
         C_edge = np.zeros(self.num_edges + 1)
 
         # Preferences over cell collision (binary)
+        # Penalty reduced from -100 to -30 so that collision is costly but not
+        # catastrophic - a selfish agent may still collide if goal reward (+50)
+        # outweighs the collision cost (-30). Empathic agents will weight the
+        # other agent's collision cost too, making them more cautious.
         C_cell_collision = np.array([
             0.0,    # Index 0: no cell collision - neutral
-            -100.0  # Index 1: cell collision - catastrophic penalty
+            -30.0   # Index 1: cell collision - significant but not catastrophic
         ])
 
         # Preferences over edge collision (binary)
         C_edge_collision = np.array([
             0.0,    # Index 0: no edge collision - neutral
-            -100.0  # Index 1: edge collision (swap) - catastrophic penalty
+            -30.0   # Index 1: edge collision (swap) - significant but not catastrophic
         ])
+
+        # Preferences over other agent's empathy (neutral - no preference for particular level)
+        C_empathy = np.zeros(self.num_empathy_levels)
 
         return {
             "location_obs": jnp.array(C_self),
             "edge_obs": jnp.array(C_edge),
             "cell_collision_obs": jnp.array(C_cell_collision),
             "edge_collision_obs": jnp.array(C_edge_collision),
+            "empathy_obs": jnp.array(C_empathy),
         }
 
     def _build_D(self):

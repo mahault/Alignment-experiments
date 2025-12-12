@@ -34,6 +34,7 @@ class LavaV2Env:
         layout_name: str = "wide",
         num_agents: int = 2,
         timesteps: int = 20,
+        start_config: str = "A",
         **layout_kwargs
     ):
         """
@@ -42,15 +43,19 @@ class LavaV2Env:
         Parameters
         ----------
         layout_name : str
-            Layout variant: "narrow", "wide", "bottleneck", "risk_reward"
+            Layout variant: "narrow", "wide", "bottleneck", "crossed_goals",
+            "risk_reward", "double_bottleneck", "passing_bay", "asymmetric_detour",
+            "t_junction"
         num_agents : int
             Number of agents (must match layout's start positions)
         timesteps : int
             Maximum timesteps per episode
+        start_config : str
+            "A" for default configuration, "B" for swapped agent positions
         **layout_kwargs : dict
             Additional layout parameters (e.g., width=8)
         """
-        self.layout = get_layout(layout_name, **layout_kwargs)
+        self.layout = get_layout(layout_name, start_config=start_config, **layout_kwargs)
         self.num_agents = num_agents
         self.timesteps = timesteps
 

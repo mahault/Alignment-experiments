@@ -237,6 +237,7 @@ def compute_j_best_response_jax(
     C_j_edge_collision: jnp.ndarray,
     actions_j: jnp.ndarray,
     epistemic_scale: float,
+    alpha_other: float,
     eps: float = 1e-16,
 ) -> Tuple[float, int]:
     """
@@ -269,6 +270,10 @@ def compute_j_best_response_jax(
         Array of j's primitive actions [num_actions]
     epistemic_scale : float
         Weight on epistemic term
+    alpha_other : float
+        The other agent's (j's) empathy level. Scales j's collision costs by
+        (1 + alpha_other) to model that empathic agents feel both their own
+        and the other's collision pain.
     eps : float
         Numerical stability
 
@@ -279,6 +284,12 @@ def compute_j_best_response_jax(
     best_action : int
         Best action index for j
     """
+    # Scale j's collision preferences by (1 + alpha_other) to model j's empathy
+    # An empathic j (alpha_other=1) feels collision costs for BOTH agents
+    # A selfish j (alpha_other=0) only feels its own collision cost
+    collision_scale = 1.0 + alpha_other
+    C_j_cell_collision_scaled = C_j_cell_collision * collision_scale
+    C_j_edge_collision_scaled = C_j_edge_collision * collision_scale
 
     # Compute G_j for each action (vectorized!)
     def compute_G_for_action(action_j):
@@ -287,6 +298,7 @@ def compute_j_best_response_jax(
 
         # Pragmatic utility (all modalities including edge collision)
         # CRITICAL: Use CURRENT states for edge collision, NEXT states for cell collision
+        # Use SCALED collision preferences to model j's empathy level
         pragmatic = expected_pragmatic_utility_jax(
             qs_self_current=qs_j,         # j's CURRENT state for edge collision
             qs_other_current=qs_i,        # i's CURRENT state (before i moved) for edge collision
@@ -299,9 +311,9 @@ def compute_j_best_response_jax(
             A_edge=A_j_edge,
             C_edge=C_j_edge,
             A_cell_collision=A_j_cell_collision,
-            C_cell_collision=C_j_cell_collision,
+            C_cell_collision=C_j_cell_collision_scaled,  # Scaled by j's empathy
             A_edge_collision=A_j_edge_collision,
-            C_edge_collision=C_j_edge_collision,
+            C_edge_collision=C_j_edge_collision_scaled,  # Scaled by j's empathy
         )
 
         # Epistemic value
@@ -352,6 +364,7 @@ def rollout_one_policy_jax(
     C_j_edge_collision: jnp.ndarray,
     actions_j: jnp.ndarray,
     epistemic_scale: float,
+    alpha_other: float,
     eps: float = 1e-16,
 ) -> Tuple[float, float]:
     """
@@ -430,15 +443,16 @@ def rollout_one_policy_jax(
         # --- i takes action ---
         qs_i_next = propagate_belief_jax(qs_i, B_i, action_i, qs_other=qs_j, eps=eps)
 
-        # --- i's EFE components ---
-        # Note: Zero out edge collision for i (we don't know j's action yet)
-        pragmatic_i = expected_pragmatic_utility_jax(
+        # --- i's EFE components (without edge collision - added after j's response) ---
+        # Edge collision requires knowing BOTH agents' actions, so we compute it
+        # after determining j's best response via ToM
+        pragmatic_i_partial = expected_pragmatic_utility_jax(
             qs_self_current=qs_i,
             qs_other_current=qs_j,
             qs_self_next=qs_i_next,
             qs_other_next=qs_j,  # j hasn't moved yet, so next = current
             action_self=action_i,
-            action_other=4,  # Dummy action (STAY)
+            action_other=4,  # Dummy - edge collision computed separately below
             A_loc=A_i_loc,
             C_loc=C_i_loc,
             A_edge=A_i_edge,
@@ -446,20 +460,31 @@ def rollout_one_policy_jax(
             A_cell_collision=A_i_cell_collision,
             C_cell_collision=C_i_cell_collision,
             A_edge_collision=A_i_edge_collision,
-            C_edge_collision=jnp.array([0.0, 0.0]),  # Zero out edge collision
+            C_edge_collision=jnp.array([0.0, 0.0]),  # Computed separately below
         )
         epistemic_i = epistemic_info_gain_jax(qs_i, A_i_loc, eps=eps)
 
-        G_i_step = -pragmatic_i - epistemic_scale * epistemic_i
-
         # --- j best-responds (vectorized over all j actions!) ---
+        # alpha_other is i's observation/belief about j's empathy level
+        # This is derived from the empathy_obs modality (identity mapping for now)
         G_j_best, best_action_j = compute_j_best_response_jax(
             qs_j, qs_i, qs_i_next, action_i,
             B_j, A_j_loc, C_j_loc, A_j_edge, C_j_edge,
             A_j_cell_collision, C_j_cell_collision,
             A_j_edge_collision, C_j_edge_collision,
-            actions_j, epistemic_scale, eps
+            actions_j, epistemic_scale, alpha_other, eps
         )
+
+        # --- NOW compute i's edge collision since we know j's best response ---
+        # Edge collision uses CURRENT states + BOTH agents' committed actions
+        A_edge_coll_slice = A_i_edge_collision[:, :, :, action_i, best_action_j]
+        edge_coll_obs_dist = jnp.einsum('oij,i,j->o', A_edge_coll_slice, qs_i, qs_j)
+        edge_collision_utility_i = (edge_coll_obs_dist * C_i_edge_collision).sum()
+
+        # Complete pragmatic utility for i (now includes edge collision with j's response)
+        pragmatic_i = pragmatic_i_partial + edge_collision_utility_i
+
+        G_i_step = -pragmatic_i - epistemic_scale * epistemic_i
 
         # Update j's belief with best action
         qs_j_next = propagate_belief_jax(qs_j, B_j, best_action_j, qs_other=qs_i_next, eps=eps)
@@ -519,6 +544,7 @@ rollout_all_policies_jax = jax.jit(vmap(
         None,  # C_j_edge_collision
         None,  # actions_j
         None,  # epistemic_scale
+        None,  # alpha_other - observed/inferred empathy of other agent
     )
     # Note: eps parameter uses default value, so not included in in_axes
 ))
@@ -548,6 +574,7 @@ def compute_empathic_G_jax(
     C_j_edge_collision: np.ndarray,
     policies_j: np.ndarray,
     alpha: float,
+    alpha_other: float,
     epistemic_scale: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -672,6 +699,7 @@ def compute_empathic_G_jax(
         C_j_edge_collision_jax,
         actions_j_jax,
         epistemic_scale,
+        alpha_other,  # Observed/inferred empathy of other agent
     )
 
     # Empathy-weighted social EFE

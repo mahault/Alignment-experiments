@@ -292,6 +292,7 @@ def compute_empathic_G(
     C_j_edge_collision: np.ndarray,
     policies_j: np.ndarray,
     alpha: float,
+    alpha_other: float,
     epistemic_scale: float = 1.0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -373,6 +374,13 @@ def compute_empathic_G(
     num_states = qs_i.shape[0]
     eps = 1e-16
 
+    # Scale j's collision preferences by (1 + alpha_other) to model j's empathy
+    # An empathic j (alpha_other=1) feels collision costs for BOTH agents (2x cost)
+    # A selfish j (alpha_other=0) only feels its own collision cost (1x cost)
+    collision_scale = 1.0 + alpha_other
+    C_j_cell_collision_scaled = C_j_cell_collision * collision_scale
+    C_j_edge_collision_scaled = C_j_edge_collision * collision_scale
+
     for i_policy_idx, policy_i in enumerate(policies_i):
         action_seq_i = policy_i[:, 0].astype(int)  # (horizon,)
         horizon = len(action_seq_i)
@@ -390,17 +398,16 @@ def compute_empathic_G(
             # --- i's action and belief propagation ---
             qs_i_next = _propagate_belief(qs_i_t, B_i, a_i_t, qs_other=qs_j_t)
 
-            # --- i's pragmatic utility (all modalities except edge collision) ---
-            # Note: We can't include edge collision here because we don't know j's action yet
-            # Edge collision requires knowing BOTH agents' actions simultaneously
-            # So we pass a dummy action and zero out the edge collision preferences
-            pragmatic_i = _expected_pragmatic_utility(
+            # --- i's pragmatic utility (without edge collision - added after j's response) ---
+            # Edge collision requires knowing BOTH agents' actions, so we compute it
+            # after determining j's best response via ToM
+            pragmatic_i_partial = _expected_pragmatic_utility(
                 qs_self_current=qs_i_t,
                 qs_other_current=qs_j_t,
                 qs_self_next=qs_i_next,
                 qs_other_next=qs_j_t,  # j hasn't moved yet, so next = current
                 action_self=a_i_t,
-                action_other=4,  # Dummy action (STAY) since we don't know j's action
+                action_other=4,  # Dummy - edge collision computed separately below
                 A_loc=A_i_loc,
                 C_loc=C_i_loc,
                 A_edge=A_i_edge,
@@ -408,16 +415,11 @@ def compute_empathic_G(
                 A_cell_collision=A_i_cell_collision,
                 C_cell_collision=C_i_cell_collision,
                 A_edge_collision=A_i_edge_collision,
-                C_edge_collision=np.array([0.0, 0.0]),  # Zero out edge collision for i's own EFE
+                C_edge_collision=np.array([0.0, 0.0]),  # Computed separately below
             )
 
             # --- i's epistemic value (info gain) ---
             info_gain_i = _epistemic_info_gain(qs_i_t, A_i_loc, eps=eps)
-
-            # One-step EFE contribution for i:
-            # G_i_step = -pragmatic_i - epistemic_scale * info_gain_i
-            G_i_step = -pragmatic_i - epistemic_scale * info_gain_i
-            total_G_i += G_i_step
 
             # --- Theory of Mind: j best-responds to i's predicted move ---
             # For j, we consider one-step policies given current beliefs.
@@ -433,6 +435,7 @@ def compute_empathic_G(
                 # Now we know both actions (i's committed a_i_t and j's candidate a_j)
                 # CRITICAL: Use CURRENT states for edge collision (where agents ARE + actions)
                 #           Use NEXT states for cell collision (where agents END UP)
+                # Use SCALED collision preferences to model j's empathy level
                 pragmatic_j = _expected_pragmatic_utility(
                     qs_self_current=qs_j_t,      # j's CURRENT state for edge collision
                     qs_other_current=qs_i_t,     # i's CURRENT state for edge collision (before i moved)
@@ -445,9 +448,9 @@ def compute_empathic_G(
                     A_edge=A_j_edge,
                     C_edge=C_j_edge,
                     A_cell_collision=A_j_cell_collision,
-                    C_cell_collision=C_j_cell_collision,
+                    C_cell_collision=C_j_cell_collision_scaled,  # Scaled by j's empathy
                     A_edge_collision=A_j_edge_collision,
-                    C_edge_collision=C_j_edge_collision,  # Include edge collision for j's response
+                    C_edge_collision=C_j_edge_collision_scaled,  # Scaled by j's empathy
                 )
 
                 # Epistemic value for j
@@ -462,6 +465,19 @@ def compute_empathic_G(
             best_j_action = int(policies_j[best_j_idx, 0, 0])
             G_j_best_step = float(G_j_actions[best_j_idx])
             total_G_j += G_j_best_step
+
+            # --- NOW compute i's edge collision since we know j's best response ---
+            # Edge collision uses CURRENT states + BOTH agents' committed actions
+            A_edge_coll_slice = A_i_edge_collision[:, :, :, a_i_t, best_j_action]
+            edge_coll_obs_dist = np.einsum('oij,i,j->o', A_edge_coll_slice, qs_i_t, qs_j_t)
+            edge_collision_utility_i = float((edge_coll_obs_dist * C_i_edge_collision).sum())
+
+            # Complete pragmatic utility for i (now includes edge collision with j's response)
+            pragmatic_i = pragmatic_i_partial + edge_collision_utility_i
+
+            # One-step EFE contribution for i
+            G_i_step = -pragmatic_i - epistemic_scale * info_gain_i
+            total_G_i += G_i_step
 
             # Update j's belief with best-response action
             qs_j_next = _propagate_belief(qs_j_t, B_j, best_j_action, qs_other=qs_i_next)
@@ -569,6 +585,7 @@ class EmpathicLavaPlanner:
     agent_i: LavaAgent
     agent_j: LavaAgent
     alpha: float = 0.5
+    alpha_other: float = 0.0  # Observed/inferred empathy of other agent (for ToM)
     epistemic_scale: float = 1.0
     use_jax: bool = True  # Default to JAX for performance
 
@@ -646,6 +663,7 @@ class EmpathicLavaPlanner:
                     A_j_edge_collision, C_j_edge_collision,
                     policies_j,
                     self.alpha,
+                    self.alpha_other,  # Observed empathy of other agent
                     epistemic_scale=self.epistemic_scale,
                 )
             except ImportError as e:
@@ -668,6 +686,7 @@ class EmpathicLavaPlanner:
                     A_j_edge_collision, C_j_edge_collision,
                     policies_j,
                     self.alpha,
+                    self.alpha_other,  # Observed empathy of other agent
                     epistemic_scale=self.epistemic_scale,
                 )
         else:
@@ -684,6 +703,7 @@ class EmpathicLavaPlanner:
                 A_j_edge_collision, C_j_edge_collision,
                 policies_j,
                 self.alpha,
+                self.alpha_other,  # Observed empathy of other agent
                 epistemic_scale=self.epistemic_scale,
             )
 
