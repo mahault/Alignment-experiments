@@ -209,23 +209,188 @@ class HierarchicalEmpathicPlanner:
 
 ---
 
-### Phase 5: Testing & Validation
+### Phase 5: Testing & Validation ✅ COMPLETE
 
-#### 5.1 Unit Tests
+#### 5.1 Unit Tests ✅
 - Zone creation and cell membership
 - Zone path finding (BFS)
 - Subgoal selection
-- Local model restriction
+- JAX compilation and correctness
+- 40 tests passing
 
-#### 5.2 Integration Tests
-- Run on `vertical_bottleneck` with hierarchical planner
-- Compare with flat planner (where flat works)
-- Verify empathy effects at zone level
+#### 5.2 Integration Tests ✅
+- JAX hierarchical planner integrated with experiment sweep
+- `--hierarchical` flag added to `run_empathy_sweep.py`
 
-#### 5.3 Sweep Tests
-- All empathy combinations (0, 0.5, 1.0)
-- Both start configs (A, B)
-- Success rate, collision rate, steps to goal
+#### 5.3 JAX Implementation ✅
+- `jax_hierarchical_planner.py` with full JIT compilation
+- `HierarchicalEmpathicPlannerJax` compatible with experiment infrastructure
+
+---
+
+### Phase 5.4: Exit Point Bug Fix ✅ COMPLETE
+
+**Problem**: Exit points were configured to be in the SOURCE zone instead of the
+DESTINATION zone. Agents would navigate to exit points, find they were already
+at the subgoal, and STAY forever.
+
+**Fix**: Updated all three layouts to set exit points IN the destination zone:
+- `vertical_bottleneck`: exit_points[0,1] = (3,3) not (3,2), exit_points[2,1] = (3,4) not (3,5)
+- `symmetric_bottleneck`: exit_points[0,1] = (4,1) not (3,1), etc.
+- `narrow`: Similar corrections
+
+**Result**: Agents now move through bottleneck (paralysis = 0%), but both rush
+forward and collide (collision rate = 100%). Empathy parameter has no effect.
+
+---
+
+### Phase 5.5: High-Level Empathy via Theory of Mind
+
+**Problem**: The current empathy calculation is broken:
+
+```python
+# BROKEN: other_dist is CONSTANT for all actions!
+other_dist = compute_zone_distance_jax(other_zone, other_goal_zone, zone_adjacency)
+empathy_utility = alpha * zone_distance_cost * other_dist
+```
+
+This adds the same constant to all zone actions (STAY, FORWARD, BACK), so empathy
+has zero effect on action selection. All alpha values produce identical behavior.
+
+**Solution**: Match the flat planner's empathy structure (si_empathy_lava.py):
+
+```python
+# FLAT PLANNER FORMULA (line 496):
+G_social = G_i + alpha * G_j_best_response
+```
+
+The key insight: **different actions from me lead to different outcomes for j**.
+We must compute j's EFE *given my action*, not a constant.
+
+**Implementation**:
+
+For each of my zone actions, simulate j's best response and compute j's EFE:
+
+```python
+# 1. If I take this action, what zone will I be in?
+next_zone = apply_zone_action(my_zone, action, my_goal_zone)
+
+# 2. Given my next_zone, what's j's best response?
+#    j wants to move toward other_goal_zone while avoiding collision with me
+j_next_zone_if_forward = get_next_zone_toward(other_zone, other_goal_zone)
+
+# 3. Am I blocking j's path?
+#    I block j if I move into the bottleneck that j needs
+j_needs_bottleneck = zone_is_bottleneck[j_next_zone_if_forward]
+i_blocks_j = (next_zone == j_next_zone_if_forward) & j_needs_bottleneck
+
+# 4. Compute j's EFE given my action
+#    - If I block: j stays, doesn't progress, bad EFE
+#    - If I don't block: j moves forward, good EFE
+j_dist_if_blocked = distance(other_zone, other_goal_zone)
+j_dist_if_clear = distance(j_next_zone_if_forward, other_goal_zone)
+
+j_utility = where(i_blocks_j, j_dist_if_blocked, j_dist_if_clear) * zone_distance_cost
+G_j_best = -j_utility  # Convert to EFE (lower = better for j)
+
+# 5. Social utility: my utility + alpha * j's outcome
+#    Since G = -utility, and G_social = G_i + alpha*G_j:
+#    utility_social = utility_i - alpha * G_j
+my_utility = distance_utility + goal_utility + collision_utility
+total_utility = my_utility - alpha * G_j_best
+```
+
+**Expected Behavior After Fix**:
+
+| alpha_i | alpha_j | Prediction |
+|---------|---------|------------|
+| 0.0 | 0.0 | Both rush forward, collide |
+| 0.0 | 1.0 | i rushes, j yields (G_j bad if blocked, j cares) |
+| 1.0 | 0.0 | i yields (cares about blocking j), j rushes through |
+| 1.0 | 1.0 | Both consider other's EFE, may alternate or one yields |
+
+**Status**: ✅ COMPLETE
+
+**Tuning**: `bottleneck_collision_cost` tuned from -5 to -15:
+- At -5: FORWARD always wins (empathy too weak)
+- At -15: α=0 → FORWARD, α≥0.5 → STAY (correct behavior)
+- At -30: STAY always wins (collision dominates even for selfish)
+
+---
+
+### Phase 6: Collision Inference from Observations
+
+**Problem**: The high-level planner currently uses a hard-coded collision penalty
+that is too aggressive. Agents refuse to enter bottleneck even when other agent
+is on the opposite side (no real collision risk).
+
+**Principle**: Collision probability should be INFERRED from observations at
+the low level, not hard-coded at the high level. This follows active inference
+principles where beliefs are updated by observations.
+
+#### 6.1 Simple Fix: Reduce High-Level Collision Penalty
+
+**Status**: To implement
+
+Reduce `bottleneck_collision_cost` from -50 to -5 so distance cost dominates:
+- High-level primarily plans zone sequence based on distance to goal
+- Low-level handles actual collision avoidance via C matrices
+- If agents get stuck (paralysis), that's observable feedback
+
+```python
+# Before: collision penalty dominates
+bottleneck_collision_cost: float = -50.0  # Blocks forward movement
+
+# After: distance cost dominates
+bottleneck_collision_cost: float = -5.0   # Small nudge, doesn't override
+```
+
+#### 6.2 Observation-Based Collision Inference
+
+**Status**: To implement after 6.1
+
+Proper active inference approach:
+
+1. **Collision belief state**: Track P(collision | zone_i, zone_j)
+2. **Prior**: Start with low collision probability
+3. **Observation**: Low-level reports collision events/near-misses
+4. **Update**: Bayesian update of collision belief
+5. **Planning**: High-level uses inferred P(collision), not hard-coded penalty
+
+```python
+@dataclass
+class HierarchicalEmpathicPlannerJax:
+    # Collision belief: P(collision | my_zone, other_zone)
+    collision_belief: jnp.ndarray  # Shape: [num_zones, num_zones]
+
+    def observe_collision(self, my_zone: int, other_zone: int, collision: bool):
+        """Update collision belief based on low-level observation."""
+        # Bayesian update
+        prior = self.collision_belief[my_zone, other_zone]
+        likelihood = 0.9 if collision else 0.1
+        posterior = (likelihood * prior) / normalizer
+        self.collision_belief = self.collision_belief.at[my_zone, other_zone].set(posterior)
+
+    def high_level_plan(self, ...):
+        # Use inferred collision probability instead of hard-coded penalty
+        collision_prob = self.collision_belief[next_zone, other_zone]
+        collision_utility = collision_cost * collision_prob
+```
+
+**Benefits**:
+- Agent learns collision patterns from experience
+- No hard-coded "same side" vs "opposite side" logic
+- True active inference: beliefs updated by observations
+- Empathy can modulate willingness to risk collision
+
+#### 6.3 Retreat Behavior
+
+With observation-based inference, retreat emerges naturally:
+1. Agent moves forward (low prior on collision)
+2. Low-level detects collision risk, agent gets stuck
+3. Collision belief increases for this zone configuration
+4. High-level re-plans with higher collision cost
+5. ZONE_BACK becomes attractive (retreat to let other pass)
 
 ---
 

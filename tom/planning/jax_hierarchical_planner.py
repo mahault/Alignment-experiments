@@ -30,6 +30,75 @@ from tom.planning.jax_si_empathy_lava import (
 
 
 # =============================================================================
+# Subgoal-Oriented Preferences
+# =============================================================================
+
+@jax.jit
+def create_subgoal_C_loc_jax(
+    subgoal_state: int,
+    original_C_loc: jnp.ndarray,
+    width: int,
+    lava_penalty: float = -100.0,
+    distance_cost: float = -2.0,
+    subgoal_reward: float = 20.0,
+) -> jnp.ndarray:
+    """
+    Create C_loc with preferences toward subgoal (JAX-compiled).
+
+    Keeps lava penalties from original C_loc but replaces distance
+    shaping to point toward subgoal instead of final goal.
+
+    Parameters
+    ----------
+    subgoal_state : int
+        Target state index
+    original_C_loc : jnp.ndarray
+        Original C_loc (used to identify lava cells)
+    width : int
+        Grid width
+    lava_penalty : float
+        Penalty for lava cells (should match original)
+    distance_cost : float
+        Cost per Manhattan distance unit from subgoal
+    subgoal_reward : float
+        Reward for being at subgoal
+
+    Returns
+    -------
+    C_loc : jnp.ndarray
+        Subgoal-oriented preference vector
+    """
+    num_states = original_C_loc.shape[0]
+    states = jnp.arange(num_states)
+
+    # Subgoal coordinates
+    subgoal_x = subgoal_state % width
+    subgoal_y = subgoal_state // width
+
+    # State coordinates
+    state_x = states % width
+    state_y = states // width
+
+    # Manhattan distance to subgoal
+    manhattan_dist = jnp.abs(state_x - subgoal_x) + jnp.abs(state_y - subgoal_y)
+
+    # Distance-based preferences (closer = better)
+    distance_prefs = distance_cost * manhattan_dist
+
+    # Subgoal reward (bonus for being at subgoal)
+    at_subgoal = (states == subgoal_state).astype(jnp.float32)
+    subgoal_prefs = at_subgoal * subgoal_reward
+
+    # Identify lava cells from original C_loc (they have very negative values)
+    is_lava = original_C_loc < -50.0  # Lava has -100
+
+    # Combine: use lava penalty where lava, else use distance shaping
+    C_loc = jnp.where(is_lava, lava_penalty, distance_prefs + subgoal_prefs)
+
+    return C_loc
+
+
+# =============================================================================
 # Zone Infrastructure (JAX-compatible)
 # =============================================================================
 
@@ -154,17 +223,18 @@ def create_jax_vertical_bottleneck_layout(
     ], dtype=np.float32)
 
     # Exit points for zone transitions
-    # exit_points[from, to] = state index to move toward when transitioning
+    # exit_points[from, to] = state index IN THE DESTINATION ZONE to navigate toward
+    # CRITICAL: Exit points must be in the destination zone, not the source zone!
     exit_points = np.full((3, 3), -1, dtype=np.int32)
 
-    # From zone 0 to zone 1: exit at (mid_x, wide_top_y)
-    exit_points[0, 1] = pos_to_idx(mid_x, wide_top_y)
-    # From zone 1 to zone 0: exit at (mid_x, wide_top_y + 1) or nearest bottleneck cell
-    exit_points[1, 0] = pos_to_idx(mid_x, wide_top_y)
-    # From zone 1 to zone 2: exit at (mid_x, wide_bottom_y - 1) or nearest
-    exit_points[1, 2] = pos_to_idx(mid_x, wide_bottom_y)
-    # From zone 2 to zone 1: exit at (mid_x, wide_bottom_y)
-    exit_points[2, 1] = pos_to_idx(mid_x, wide_bottom_y)
+    # From zone 0 to zone 1: exit INTO zone 1 (one step below top wide row)
+    exit_points[0, 1] = pos_to_idx(mid_x, wide_top_y + 1)  # (3, 3) - in bottleneck
+    # From zone 1 to zone 0: exit INTO zone 0 (into top wide row)
+    exit_points[1, 0] = pos_to_idx(mid_x, wide_top_y)      # (3, 2) - in top_wide
+    # From zone 1 to zone 2: exit INTO zone 2 (into bottom wide row)
+    exit_points[1, 2] = pos_to_idx(mid_x, wide_bottom_y)   # (3, 5) - in bottom_wide
+    # From zone 2 to zone 1: exit INTO zone 1 (one step above bottom wide row)
+    exit_points[2, 1] = pos_to_idx(mid_x, wide_bottom_y - 1)  # (3, 4) - in bottleneck
 
     # Determine goal zone
     goal_zone = 0
@@ -245,11 +315,16 @@ def create_jax_symmetric_bottleneck_layout(
         [(bottleneck_end + width) / 2, 1.5],
     ], dtype=np.float32)
 
+    # Exit points: must be IN THE DESTINATION ZONE
     exit_points = np.full((3, 3), -1, dtype=np.int32)
-    exit_points[0, 1] = pos_to_idx(bottleneck_start - 1, 1)
-    exit_points[1, 0] = pos_to_idx(bottleneck_start, 1)
-    exit_points[1, 2] = pos_to_idx(bottleneck_end - 1, 1)
-    exit_points[2, 1] = pos_to_idx(bottleneck_end, 1)
+    # From zone 0 to zone 1: exit INTO zone 1 (first bottleneck cell)
+    exit_points[0, 1] = pos_to_idx(bottleneck_start, 1)      # x=4, in bottleneck
+    # From zone 1 to zone 0: exit INTO zone 0 (last left-wide cell)
+    exit_points[1, 0] = pos_to_idx(bottleneck_start - 1, 1)  # x=3, in left_wide
+    # From zone 1 to zone 2: exit INTO zone 2 (first right-wide cell)
+    exit_points[1, 2] = pos_to_idx(bottleneck_end, 1)        # x=6, in right_wide
+    # From zone 2 to zone 1: exit INTO zone 1 (last bottleneck cell)
+    exit_points[2, 1] = pos_to_idx(bottleneck_end - 1, 1)    # x=5, in bottleneck
 
     goal_zone = 0
     if goal_pos is not None:
@@ -321,11 +396,16 @@ def create_jax_narrow_layout(
         [third * 2.5, safe_y],
     ], dtype=np.float32)
 
+    # Exit points: must be IN THE DESTINATION ZONE
     exit_points = np.full((3, 3), -1, dtype=np.int32)
-    exit_points[0, 1] = pos_to_idx(third - 1, safe_y)
-    exit_points[1, 0] = pos_to_idx(third, safe_y)
-    exit_points[1, 2] = pos_to_idx(2 * third - 1, safe_y)
-    exit_points[2, 1] = pos_to_idx(2 * third, safe_y)
+    # From zone 0 to zone 1: exit INTO zone 1 (first middle cell)
+    exit_points[0, 1] = pos_to_idx(third, safe_y)           # x=2, in middle zone
+    # From zone 1 to zone 0: exit INTO zone 0 (last left cell)
+    exit_points[1, 0] = pos_to_idx(third - 1, safe_y)       # x=1, in left zone
+    # From zone 1 to zone 2: exit INTO zone 2 (first right cell)
+    exit_points[1, 2] = pos_to_idx(2 * third, safe_y)       # x=4, in right zone
+    # From zone 2 to zone 1: exit INTO zone 1 (last middle cell)
+    exit_points[2, 1] = pos_to_idx(2 * third - 1, safe_y)   # x=3, in middle zone
 
     goal_zone = 0
     if goal_pos is not None:
@@ -504,7 +584,7 @@ def compute_zone_G_jax(
     alpha: float,
     zone_adjacency: jnp.ndarray,
     zone_is_bottleneck: jnp.ndarray,
-    bottleneck_collision_cost: float = -50.0,
+    bottleneck_collision_cost: float = -15.0,  # Tuned so empathetic agents yield, selfish push through
     zone_distance_cost: float = -10.0,
     goal_zone_reward: float = 100.0,
 ) -> float:
@@ -557,9 +637,8 @@ def compute_zone_G_jax(
     # 2. Goal zone reward
     goal_utility = jnp.where(next_zone == my_goal_zone, goal_zone_reward, 0.0)
 
-    # 3. Bottleneck collision risk
+    # 3. Bottleneck collision risk (for my own EFE)
     next_is_bottleneck = zone_is_bottleneck[next_zone]
-    other_is_bottleneck = zone_is_bottleneck[other_zone]
 
     # Check if other is adjacent to our next zone
     other_adjacent = zone_adjacency[next_zone, other_zone] > 0
@@ -568,18 +647,75 @@ def compute_zone_G_jax(
         next_is_bottleneck & (other_zone == next_zone),
         bottleneck_collision_cost,  # Both in same bottleneck
         jnp.where(
-            next_is_bottleneck & (other_is_bottleneck | other_adjacent),
+            next_is_bottleneck & other_adjacent,
             bottleneck_collision_cost * 0.5,  # High risk
             0.0
         )
     )
 
-    # 4. Empathy: consider other's progress
-    other_dist = compute_zone_distance_jax(other_zone, other_goal_zone, zone_adjacency)
-    empathy_utility = alpha * zone_distance_cost * other_dist
+    # My utility (G_i component)
+    my_utility = distance_utility + goal_utility + collision_utility
 
-    # Total utility (higher = better)
-    total_utility = distance_utility + goal_utility + collision_utility + empathy_utility
+    # 4. Empathy via Theory of Mind: compute j's best response EFE given my action
+    # Following the flat planner structure (jax_si_empathy_lava.py):
+    #   G_social = G_i + alpha * G_j_best
+    #
+    # For each j zone action (STAY, FORWARD, BACK), compute j's EFE given my next_zone,
+    # then pick j's best response.
+
+    # j's next zone for each of j's possible actions
+    j_next_if_stay = other_zone
+    j_next_if_forward = get_next_zone_toward_jax(other_zone, other_goal_zone, zone_adjacency)
+    j_next_if_back = get_next_zone_away_jax(other_zone, other_goal_zone, zone_adjacency)
+
+    # j's distance utility for each action
+    j_dist_stay = compute_zone_distance_jax(j_next_if_stay, other_goal_zone, zone_adjacency)
+    j_dist_forward = compute_zone_distance_jax(j_next_if_forward, other_goal_zone, zone_adjacency)
+    j_dist_back = compute_zone_distance_jax(j_next_if_back, other_goal_zone, zone_adjacency)
+
+    j_util_stay = zone_distance_cost * j_dist_stay
+    j_util_forward = zone_distance_cost * j_dist_forward
+    j_util_back = zone_distance_cost * j_dist_back
+
+    # j's goal zone reward
+    j_goal_stay = jnp.where(j_next_if_stay == other_goal_zone, goal_zone_reward, 0.0)
+    j_goal_forward = jnp.where(j_next_if_forward == other_goal_zone, goal_zone_reward, 0.0)
+    j_goal_back = jnp.where(j_next_if_back == other_goal_zone, goal_zone_reward, 0.0)
+
+    # j's collision penalty (j collides with me if j enters same zone as my next_zone)
+    j_coll_stay = jnp.where(
+        zone_is_bottleneck[j_next_if_stay] & (j_next_if_stay == next_zone),
+        bottleneck_collision_cost, 0.0
+    )
+    j_coll_forward = jnp.where(
+        zone_is_bottleneck[j_next_if_forward] & (j_next_if_forward == next_zone),
+        bottleneck_collision_cost, 0.0
+    )
+    j_coll_back = jnp.where(
+        zone_is_bottleneck[j_next_if_back] & (j_next_if_back == next_zone),
+        bottleneck_collision_cost, 0.0
+    )
+
+    # j's total utility for each action
+    j_total_stay = j_util_stay + j_goal_stay + j_coll_stay
+    j_total_forward = j_util_forward + j_goal_forward + j_coll_forward
+    j_total_back = j_util_back + j_goal_back + j_coll_back
+
+    # j's EFE for each action (G = -utility, lower is better)
+    G_j_stay = -j_total_stay
+    G_j_forward = -j_total_forward
+    G_j_back = -j_total_back
+
+    # j's best response: pick action with lowest G
+    G_j_best = jnp.minimum(G_j_stay, jnp.minimum(G_j_forward, G_j_back))
+
+    # Social EFE: G_social = G_i + alpha * G_j_best
+    # Since we're computing utility (higher = better), and G = -utility:
+    # total_utility = my_utility, and we add alpha * (-G_j_best) = alpha * j's best utility
+    # But G_social = G_i + alpha * G_j_best, so:
+    # -total_utility_social = -my_utility + alpha * G_j_best
+    # total_utility_social = my_utility - alpha * G_j_best
+    total_utility = my_utility - alpha * G_j_best
 
     # Convert to EFE (lower = better)
     G = -total_utility
@@ -718,7 +854,6 @@ def compute_low_level_G_jax(
     qs_self: jnp.ndarray,
     qs_other: jnp.ndarray,
     action: int,
-    subgoal_state: int,
     B: jnp.ndarray,
     A_loc: jnp.ndarray,
     C_loc: jnp.ndarray,
@@ -730,16 +865,17 @@ def compute_low_level_G_jax(
     C_edge_collision: jnp.ndarray,
     action_other: int,
     alpha: float,
-    subgoal_weight: float = 20.0,
     eps: float = 1e-16,
 ) -> float:
     """
-    Compute EFE for low-level action toward subgoal (JAX-compiled).
+    Compute EFE for low-level action (JAX-compiled).
 
     Uses full active inference EFE with:
     - Pragmatic value (location, collision preferences)
     - Epistemic value (information gain)
-    - Subgoal distance bonus
+
+    The C_loc parameter should already encode subgoal preferences
+    (created via create_subgoal_C_loc_jax).
 
     Parameters
     ----------
@@ -749,14 +885,12 @@ def compute_low_level_G_jax(
         Belief over other's state [num_states]
     action : int
         Action to evaluate
-    subgoal_state : int
-        Target state from zone planning
     B : jnp.ndarray
         Transition model [s', s, s_other, a]
     A_loc : jnp.ndarray
         Location observation model
     C_loc : jnp.ndarray
-        Location preferences
+        Location preferences (should include subgoal preferences)
     A_cell_collision : jnp.ndarray
         Cell collision observation model
     C_cell_collision : jnp.ndarray
@@ -773,8 +907,6 @@ def compute_low_level_G_jax(
         Predicted other agent's action (for edge collision)
     alpha : float
         Empathy weight
-    subgoal_weight : float
-        Weight on subgoal distance
     eps : float
         Numerical stability
 
@@ -787,6 +919,7 @@ def compute_low_level_G_jax(
     qs_self_next = propagate_belief_jax(qs_self, B, action, qs_other, eps)
 
     # Pragmatic utility using existing function
+    # C_loc now contains subgoal-oriented preferences (distance shaping + lava penalties)
     pragmatic = expected_pragmatic_utility_jax(
         qs_self_current=qs_self,
         qs_other_current=qs_other,
@@ -807,21 +940,10 @@ def compute_low_level_G_jax(
     # Epistemic value
     epistemic = epistemic_info_gain_jax(qs_self, A_loc, eps)
 
-    # Subgoal distance bonus
-    # Expected distance to subgoal after action
-    # Use dot product: E[dist] = sum_s' qs_next[s'] * dist(s', subgoal)
-    num_states = qs_self.shape[0]
-    states = jnp.arange(num_states)
-
-    # Manhattan distance computation (requires knowing width)
-    # For now, use simple state-index difference as proxy
-    # TODO: Pass width for proper Manhattan distance
-    subgoal_bonus = -subgoal_weight * jnp.abs(
-        jnp.sum(qs_self_next * states) - subgoal_state
-    )
-
-    # Total EFE
-    G = -pragmatic - epistemic + subgoal_bonus
+    # Total EFE (lower = better)
+    # Subgoal preferences are now encoded in C_loc, so pragmatic value
+    # naturally steers agent toward subgoal
+    G = -pragmatic - epistemic
     return G
 
 
@@ -832,7 +954,7 @@ def low_level_plan_jax(
     subgoal_state: int,
     B: jnp.ndarray,
     A_loc: jnp.ndarray,
-    C_loc: jnp.ndarray,
+    C_loc_original: jnp.ndarray,
     A_cell_collision: jnp.ndarray,
     C_cell_collision: jnp.ndarray,
     A_edge: jnp.ndarray,
@@ -840,11 +962,15 @@ def low_level_plan_jax(
     A_edge_collision: jnp.ndarray,
     C_edge_collision: jnp.ndarray,
     alpha: float,
+    width: int,
     gamma: float = 8.0,
     eps: float = 1e-16,
 ) -> Tuple[int, jnp.ndarray, jnp.ndarray]:
     """
     Low-level action planning using EFE (JAX-compiled).
+
+    Creates a subgoal-oriented C_loc from the original C_loc, then uses
+    standard EFE computation to select actions.
 
     Parameters
     ----------
@@ -856,8 +982,10 @@ def low_level_plan_jax(
         Target state from zone planning
     B : jnp.ndarray
         Transition model
-    A_loc, C_loc : jnp.ndarray
-        Location observation model and preferences
+    A_loc : jnp.ndarray
+        Location observation model
+    C_loc_original : jnp.ndarray
+        Original location preferences (used to identify lava cells)
     A_cell_collision, C_cell_collision : jnp.ndarray
         Cell collision model and preferences
     A_edge, C_edge : jnp.ndarray
@@ -866,6 +994,8 @@ def low_level_plan_jax(
         Edge collision model and preferences
     alpha : float
         Empathy weight
+    width : int
+        Grid width for subgoal C_loc creation
     gamma : float
         Inverse temperature
     eps : float
@@ -880,13 +1010,21 @@ def low_level_plan_jax(
     q_pi : jnp.ndarray
         Policy posterior [5]
     """
+    # Create subgoal-oriented C_loc
+    # This encodes preferences toward the subgoal while preserving lava penalties
+    C_loc_subgoal = create_subgoal_C_loc_jax(
+        subgoal_state=subgoal_state,
+        original_C_loc=C_loc_original,
+        width=width,
+    )
+
     actions = jnp.arange(5)  # UP, DOWN, LEFT, RIGHT, STAY
 
     # Compute G for each action (assume other stays for edge collision calc)
     def compute_G_for_action(action):
         return compute_low_level_G_jax(
-            qs_self, qs_other, action, subgoal_state,
-            B, A_loc, C_loc, A_cell_collision, C_cell_collision,
+            qs_self, qs_other, action,
+            B, A_loc, C_loc_subgoal, A_cell_collision, C_cell_collision,
             A_edge, C_edge, A_edge_collision, C_edge_collision,
             action_other=4,  # Assume other stays
             alpha=alpha,
@@ -1083,7 +1221,7 @@ class JaxHierarchicalPlanner:
             self.A_cell_collision, self.C_cell_collision,
             self.A_edge, self.C_edge,
             self.A_edge_collision, self.C_edge_collision,
-            self.alpha, self.gamma,
+            self.alpha, layout.width, self.gamma,
         )
 
         return {

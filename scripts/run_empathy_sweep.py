@@ -44,6 +44,7 @@ from tom.models import LavaModel, LavaAgent
 from tom.envs import LavaV2Env
 from tom.envs.env_lava_variants import get_layout, get_all_layout_names, LAYOUT_COMPLEXITY
 from tom.planning.si_empathy_lava import EmpathicLavaPlanner
+from tom.planning.jax_hierarchical_planner import HierarchicalEmpathicPlannerJax, has_jax_zoned_layout
 from tom.planning import safe_belief_update
 from src.metrics.paralysis_detection import detect_paralysis
 
@@ -81,6 +82,9 @@ class ExperimentConfig:
     # Output
     output_dir: str = "results"
     verbose: bool = False
+
+    # Planner type
+    use_hierarchical: bool = False  # Use hierarchical planner for supported layouts
 
     def __post_init__(self):
         if self.layouts is None:
@@ -140,7 +144,8 @@ def run_episode(
         print(f"\n{'='*80}")
         print(f"Episode: layout={env.layout.name}, seed={seed}")
         print(f"  alpha_i={planner_i.alpha}, alpha_j={planner_j.alpha}")
-        print(f"  using_jax={planner_i.use_jax}")
+        planner_type = "hierarchical" if isinstance(planner_i, HierarchicalEmpathicPlannerJax) else "flat"
+        print(f"  planner={planner_type}")
         print(f"{'='*80}")
         print(f"\nInitial state:")
         print(env.render_state(state))
@@ -478,8 +483,26 @@ def setup_experiment(
     # Each planner knows its own alpha AND observes the other's alpha (for ToM)
     # planner_i: alpha=alpha_i (self), alpha_other=alpha_j (observed empathy of j)
     # planner_j: alpha=alpha_j (self), alpha_other=alpha_i (observed empathy of i)
-    planner_i = EmpathicLavaPlanner(agent_i, agent_j, alpha=alpha_i, alpha_other=alpha_j)
-    planner_j = EmpathicLavaPlanner(agent_j, agent_i, alpha=alpha_j, alpha_other=alpha_i)
+
+    # Use hierarchical planner if requested and layout supports it
+    if config.use_hierarchical and has_jax_zoned_layout(layout_name):
+        planner_i = HierarchicalEmpathicPlannerJax(
+            agent_i, agent_j,
+            layout_name=layout_name,
+            alpha=alpha_i,
+            alpha_other=alpha_j,
+            gamma=config.gamma,
+        )
+        planner_j = HierarchicalEmpathicPlannerJax(
+            agent_j, agent_i,
+            layout_name=layout_name,
+            alpha=alpha_j,
+            alpha_other=alpha_i,
+            gamma=config.gamma,
+        )
+    else:
+        planner_i = EmpathicLavaPlanner(agent_i, agent_j, alpha=alpha_i, alpha_other=alpha_j)
+        planner_j = EmpathicLavaPlanner(agent_j, agent_i, alpha=alpha_j, alpha_other=alpha_i)
 
     return env, planner_i, planner_j
 
@@ -656,6 +679,8 @@ def main():
                        help="Verbose output")
     parser.add_argument("--quick", action="store_true",
                        help="Quick test with fewer configs")
+    parser.add_argument("--hierarchical", action="store_true",
+                       help="Use hierarchical planner (for vertical_bottleneck, symmetric_bottleneck, narrow)")
 
     args = parser.parse_args()
 
@@ -665,7 +690,8 @@ def main():
         num_seeds=args.seeds,
         horizon=args.horizon,
         max_timesteps=args.max_steps,
-        verbose=args.verbose
+        verbose=args.verbose,
+        use_hierarchical=args.hierarchical,
     )
 
     # Quick mode for testing
@@ -685,6 +711,7 @@ def main():
     print(f"  Seeds: {config.num_seeds}")
     print(f"  Horizon: {config.horizon}")
     print(f"  Max steps: {config.max_timesteps}")
+    print(f"  Hierarchical: {config.use_hierarchical}")
 
     # Run sweep
     df = run_sweep(config, mode=args.mode)
