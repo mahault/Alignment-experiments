@@ -475,3 +475,555 @@ def get_zoned_layout(layout_name: str, **kwargs) -> ZonedLayout:
 def has_zoned_layout(layout_name: str) -> bool:
     """Check if a layout has zone definitions."""
     return layout_name in ZONED_LAYOUTS
+
+
+# =============================================================================
+# Phase 2: High-Level Zone Planner
+# =============================================================================
+
+@dataclass
+class ZoneState:
+    """State representation at zone level."""
+    my_zone: int
+    other_zone: int
+    my_goal_zone: int
+    other_goal_zone: int
+
+
+def compute_zone_distance(zoned_layout: ZonedLayout, from_zone: int, to_zone: int) -> int:
+    """Compute number of zone transitions needed."""
+    path = zoned_layout.get_zone_path(from_zone, to_zone)
+    return max(0, len(path) - 1)
+
+
+def apply_zone_action(
+    zoned_layout: ZonedLayout,
+    current_zone: int,
+    action: ZoneAction,
+    goal_zone: int
+) -> int:
+    """
+    Apply a zone-level action to get next zone.
+
+    Parameters
+    ----------
+    zoned_layout : ZonedLayout
+        The zoned layout
+    current_zone : int
+        Current zone ID
+    action : ZoneAction
+        Zone action to take
+    goal_zone : int
+        Target goal zone
+
+    Returns
+    -------
+    int
+        Next zone ID after taking action
+    """
+    if action == ZoneAction.STAY:
+        return current_zone
+    elif action == ZoneAction.MOVE_FORWARD:
+        return zoned_layout.get_next_zone_toward(current_zone, goal_zone)
+    elif action == ZoneAction.MOVE_BACK:
+        return zoned_layout.get_next_zone_away(current_zone, goal_zone)
+    else:
+        return current_zone
+
+
+def compute_zone_G(
+    zoned_layout: ZonedLayout,
+    my_zone: int,
+    other_zone: int,
+    my_goal_zone: int,
+    action: ZoneAction,
+    alpha: float,
+    other_goal_zone: int,
+    bottleneck_collision_cost: float = -50.0,
+    zone_distance_cost: float = -10.0,
+    goal_zone_reward: float = 100.0,
+) -> float:
+    """
+    Compute EFE for a zone-level action.
+
+    Components:
+    1. Distance to goal zone (closer = better)
+    2. Goal zone reward (being in goal zone)
+    3. Bottleneck collision risk (both agents in bottleneck = bad)
+    4. Empathy: consider other agent's progress too
+
+    Parameters
+    ----------
+    zoned_layout : ZonedLayout
+        Zone layout
+    my_zone : int
+        Current zone
+    other_zone : int
+        Other agent's zone
+    my_goal_zone : int
+        My goal zone
+    action : ZoneAction
+        Action to evaluate
+    alpha : float
+        Empathy weight
+    other_goal_zone : int
+        Other agent's goal zone
+    bottleneck_collision_cost : float
+        Penalty when both agents in bottleneck
+    zone_distance_cost : float
+        Cost per zone away from goal
+    goal_zone_reward : float
+        Reward for being in goal zone
+
+    Returns
+    -------
+    float
+        Expected free energy (lower = better)
+    """
+    # Apply action to get next zone
+    next_zone = apply_zone_action(zoned_layout, my_zone, action, my_goal_zone)
+    next_zone_obj = zoned_layout.get_zone(next_zone)
+
+    # 1. Distance to goal
+    dist_to_goal = compute_zone_distance(zoned_layout, next_zone, my_goal_zone)
+    distance_utility = zone_distance_cost * dist_to_goal
+
+    # 2. Goal zone reward
+    goal_utility = goal_zone_reward if next_zone == my_goal_zone else 0.0
+
+    # 3. Bottleneck collision risk
+    collision_utility = 0.0
+    if next_zone_obj and next_zone_obj.is_bottleneck:
+        # Predict other might also be in bottleneck
+        # Simple heuristic: if other is adjacent to bottleneck or in it
+        other_zone_obj = zoned_layout.get_zone(other_zone)
+        if other_zone_obj:
+            other_adjacent_to_bottleneck = next_zone in other_zone_obj.adjacent_zones
+            other_in_bottleneck = other_zone_obj.is_bottleneck
+
+            if other_in_bottleneck or other_adjacent_to_bottleneck:
+                # Higher collision risk
+                collision_utility = bottleneck_collision_cost * 0.5
+            if other_zone == next_zone:
+                # Both definitely in same zone
+                collision_utility = bottleneck_collision_cost
+
+    # 4. Empathy: consider other's progress
+    other_dist = compute_zone_distance(zoned_layout, other_zone, other_goal_zone)
+    empathy_utility = alpha * zone_distance_cost * other_dist
+
+    # Total utility (higher = better)
+    total_utility = distance_utility + goal_utility + collision_utility + empathy_utility
+
+    # Convert to EFE (lower = better)
+    G = -total_utility
+    return G
+
+
+def high_level_plan(
+    zoned_layout: ZonedLayout,
+    my_zone: int,
+    other_zone: int,
+    my_goal_zone: int,
+    other_goal_zone: int,
+    alpha: float,
+    horizon: int = 3,
+    gamma: float = 8.0,
+) -> Tuple[ZoneAction, np.ndarray, np.ndarray]:
+    """
+    High-level zone planning using simplified EFE.
+
+    Enumerates zone-action sequences and picks best based on EFE.
+
+    Parameters
+    ----------
+    zoned_layout : ZonedLayout
+        Zone layout
+    my_zone : int
+        Current zone
+    other_zone : int
+        Other agent's current zone
+    my_goal_zone : int
+        My goal zone
+    other_goal_zone : int
+        Other's goal zone
+    alpha : float
+        Empathy weight
+    horizon : int
+        Planning horizon (zone transitions)
+    gamma : float
+        Inverse temperature
+
+    Returns
+    -------
+    best_action : ZoneAction
+        First action of best policy
+    G_values : np.ndarray
+        G values for each first action
+    q_pi : np.ndarray
+        Policy posterior for each first action
+    """
+    import itertools
+
+    actions = [ZoneAction.STAY, ZoneAction.MOVE_FORWARD, ZoneAction.MOVE_BACK]
+    num_actions = len(actions)
+
+    # For simplicity, evaluate single-step actions (greedy at zone level)
+    # Full multi-step would be 3^H but zone transitions are coarse anyway
+    G_values = np.zeros(num_actions)
+
+    for i, action in enumerate(actions):
+        G_values[i] = compute_zone_G(
+            zoned_layout,
+            my_zone,
+            other_zone,
+            my_goal_zone,
+            action,
+            alpha,
+            other_goal_zone,
+        )
+
+    # Softmax policy selection
+    log_q_pi = -gamma * G_values
+    log_q_pi = log_q_pi - log_q_pi.max()
+    q_pi = np.exp(log_q_pi)
+    q_pi = q_pi / q_pi.sum()
+
+    # Select best action
+    best_idx = np.argmin(G_values)
+    best_action = actions[best_idx]
+
+    return best_action, G_values, q_pi
+
+
+# =============================================================================
+# Phase 3: Low-Level Within-Zone Planner
+# =============================================================================
+
+def get_subgoal(
+    zoned_layout: ZonedLayout,
+    current_zone: int,
+    zone_action: ZoneAction,
+    goal_zone: int,
+    final_goal: Tuple[int, int],
+) -> Tuple[int, int]:
+    """
+    Determine subgoal based on zone action.
+
+    Parameters
+    ----------
+    zoned_layout : ZonedLayout
+        Zone layout
+    current_zone : int
+        Current zone
+    zone_action : ZoneAction
+        High-level zone action
+    goal_zone : int
+        Ultimate goal zone
+    final_goal : Tuple[int, int]
+        Final goal position
+
+    Returns
+    -------
+    subgoal : Tuple[int, int]
+        Grid cell to navigate toward
+    """
+    current_zone_obj = zoned_layout.get_zone(current_zone)
+    if current_zone_obj is None:
+        return final_goal
+
+    if zone_action == ZoneAction.STAY:
+        # Stay in zone - subgoal is center or final goal if in zone
+        if final_goal in current_zone_obj.cells:
+            return final_goal
+        else:
+            # Return a central cell
+            center = current_zone_obj.get_center()
+            # Find closest cell to center
+            best_cell = min(current_zone_obj.cells,
+                          key=lambda c: abs(c[0]-center[0]) + abs(c[1]-center[1]))
+            return best_cell
+
+    elif zone_action == ZoneAction.MOVE_FORWARD:
+        # Moving toward goal - subgoal is exit point toward next zone
+        next_zone = zoned_layout.get_next_zone_toward(current_zone, goal_zone)
+        exit_points = current_zone_obj.get_exit_to(next_zone)
+        if exit_points:
+            return exit_points[0]
+        else:
+            # Fallback: final goal or center
+            return final_goal if final_goal in current_zone_obj.cells else list(current_zone_obj.cells)[0]
+
+    elif zone_action == ZoneAction.MOVE_BACK:
+        # Yielding - move to exit point away from goal
+        next_zone = zoned_layout.get_next_zone_away(current_zone, goal_zone)
+        exit_points = current_zone_obj.get_exit_to(next_zone)
+        if exit_points:
+            return exit_points[0]
+        else:
+            # Just stay in place
+            return list(current_zone_obj.cells)[0]
+
+    return final_goal
+
+
+def manhattan_distance(p1: Tuple[int, int], p2: Tuple[int, int]) -> int:
+    """Compute Manhattan distance between two points."""
+    return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+
+
+def low_level_greedy_action(
+    current_pos: Tuple[int, int],
+    subgoal: Tuple[int, int],
+    other_pos: Tuple[int, int],
+    safe_cells: Set[Tuple[int, int]],
+    width: int,
+    height: int,
+    collision_penalty: float = -30.0,
+    alpha: float = 0.0,
+) -> int:
+    """
+    Simple greedy action selection toward subgoal.
+
+    For full EFE-based low-level planning, use the existing EmpathicLavaPlanner
+    with a restricted state space. This greedy version is faster for testing.
+
+    Parameters
+    ----------
+    current_pos : Tuple[int, int]
+        Current position
+    subgoal : Tuple[int, int]
+        Target position
+    other_pos : Tuple[int, int]
+        Other agent's position
+    safe_cells : Set[Tuple[int, int]]
+        Set of safe cells
+    width, height : int
+        Grid dimensions
+    collision_penalty : float
+        Penalty for potential collision
+    alpha : float
+        Empathy weight
+
+    Returns
+    -------
+    action : int
+        Primitive action (0=UP, 1=DOWN, 2=LEFT, 3=RIGHT, 4=STAY)
+    """
+    # Action effects
+    # 0=UP (y-1), 1=DOWN (y+1), 2=LEFT (x-1), 3=RIGHT (x+1), 4=STAY
+    dx = [0, 0, -1, 1, 0]
+    dy = [-1, 1, 0, 0, 0]
+
+    best_action = 4  # Default: STAY
+    best_score = float('-inf')
+
+    for action in range(5):
+        nx = current_pos[0] + dx[action]
+        ny = current_pos[1] + dy[action]
+
+        # Clamp to grid
+        nx = max(0, min(width - 1, nx))
+        ny = max(0, min(height - 1, ny))
+        next_pos = (nx, ny)
+
+        # Check if safe
+        if next_pos not in safe_cells:
+            continue  # Skip lava
+
+        # Score: negative distance to subgoal
+        dist = manhattan_distance(next_pos, subgoal)
+        score = -dist * 10  # Scale for readability
+
+        # Collision avoidance
+        if next_pos == other_pos:
+            score += collision_penalty * (1 + alpha)  # Empathy increases collision aversion
+
+        # Prefer progress
+        current_dist = manhattan_distance(current_pos, subgoal)
+        if dist < current_dist:
+            score += 5  # Bonus for making progress
+
+        if score > best_score:
+            best_score = score
+            best_action = action
+
+    return best_action
+
+
+# =============================================================================
+# Phase 4: Hierarchical Empathic Planner
+# =============================================================================
+
+@dataclass
+class HierarchicalEmpathicPlanner:
+    """
+    Two-level hierarchical planner with empathy.
+
+    High-level: Zone transition planning (coarse, long horizon)
+    Low-level: Within-zone navigation (fine, short horizon)
+
+    Attributes
+    ----------
+    zoned_layout : ZonedLayout
+        Layout with zone decomposition
+    goal_pos : Tuple[int, int]
+        Final goal position
+    safe_cells : Set[Tuple[int, int]]
+        Set of safe (non-lava) cells
+    width : int
+        Grid width
+    height : int
+        Grid height
+    alpha : float
+        Empathy weight (0 = selfish, 1 = prosocial)
+    alpha_other : float
+        Believed empathy of other agent
+    high_level_horizon : int
+        Horizon for zone planning
+    use_greedy_low_level : bool
+        If True, use fast greedy action selection
+        If False, use full EFE-based low-level planning (slower but better)
+    """
+    zoned_layout: ZonedLayout
+    goal_pos: Tuple[int, int]
+    safe_cells: Set[Tuple[int, int]]
+    width: int
+    height: int
+    alpha: float = 0.5
+    alpha_other: float = 0.0
+    high_level_horizon: int = 3
+    use_greedy_low_level: bool = True
+
+    def get_goal_zone(self) -> int:
+        """Get zone containing the goal."""
+        zone_id = self.zoned_layout.get_zone_for_cell(self.goal_pos)
+        return zone_id if zone_id is not None else 0
+
+    def plan(
+        self,
+        my_pos: Tuple[int, int],
+        other_pos: Tuple[int, int],
+        other_goal_pos: Tuple[int, int],
+    ) -> int:
+        """
+        Plan next action using two-level hierarchy.
+
+        Parameters
+        ----------
+        my_pos : Tuple[int, int]
+            My current position
+        other_pos : Tuple[int, int]
+            Other agent's position
+        other_goal_pos : Tuple[int, int]
+            Other agent's goal position
+
+        Returns
+        -------
+        action : int
+            Primitive action (0-4)
+        """
+        # 1. Determine current zones
+        my_zone = self.zoned_layout.get_zone_for_cell(my_pos)
+        other_zone = self.zoned_layout.get_zone_for_cell(other_pos)
+        my_goal_zone = self.get_goal_zone()
+        other_goal_zone = self.zoned_layout.get_zone_for_cell(other_goal_pos)
+
+        # Handle edge cases
+        if my_zone is None:
+            my_zone = 0
+        if other_zone is None:
+            other_zone = 0
+        if other_goal_zone is None:
+            other_goal_zone = 0
+
+        # 2. High-level: decide zone action
+        zone_action, G_zone, q_zone = high_level_plan(
+            self.zoned_layout,
+            my_zone,
+            other_zone,
+            my_goal_zone,
+            other_goal_zone,
+            self.alpha,
+            horizon=self.high_level_horizon,
+        )
+
+        # 3. Determine subgoal from zone action
+        subgoal = get_subgoal(
+            self.zoned_layout,
+            my_zone,
+            zone_action,
+            my_goal_zone,
+            self.goal_pos,
+        )
+
+        # 4. Low-level: navigate toward subgoal
+        if self.use_greedy_low_level:
+            action = low_level_greedy_action(
+                my_pos,
+                subgoal,
+                other_pos,
+                self.safe_cells,
+                self.width,
+                self.height,
+                alpha=self.alpha,
+            )
+        else:
+            # TODO: Use full EmpathicLavaPlanner with restricted state space
+            # For now, fall back to greedy
+            action = low_level_greedy_action(
+                my_pos,
+                subgoal,
+                other_pos,
+                self.safe_cells,
+                self.width,
+                self.height,
+                alpha=self.alpha,
+            )
+
+        return action
+
+    def plan_with_debug(
+        self,
+        my_pos: Tuple[int, int],
+        other_pos: Tuple[int, int],
+        other_goal_pos: Tuple[int, int],
+    ) -> Dict:
+        """
+        Plan with debug information.
+
+        Returns dict with action and intermediate values.
+        """
+        my_zone = self.zoned_layout.get_zone_for_cell(my_pos)
+        other_zone = self.zoned_layout.get_zone_for_cell(other_pos)
+        my_goal_zone = self.get_goal_zone()
+        other_goal_zone = self.zoned_layout.get_zone_for_cell(other_goal_pos)
+
+        if my_zone is None: my_zone = 0
+        if other_zone is None: other_zone = 0
+        if other_goal_zone is None: other_goal_zone = 0
+
+        zone_action, G_zone, q_zone = high_level_plan(
+            self.zoned_layout, my_zone, other_zone, my_goal_zone,
+            other_goal_zone, self.alpha, self.high_level_horizon,
+        )
+
+        subgoal = get_subgoal(
+            self.zoned_layout, my_zone, zone_action, my_goal_zone, self.goal_pos
+        )
+
+        action = low_level_greedy_action(
+            my_pos, subgoal, other_pos, self.safe_cells,
+            self.width, self.height, alpha=self.alpha,
+        )
+
+        return {
+            "action": action,
+            "my_zone": my_zone,
+            "other_zone": other_zone,
+            "my_goal_zone": my_goal_zone,
+            "zone_action": zone_action,
+            "subgoal": subgoal,
+            "G_zone": G_zone,
+            "q_zone": q_zone,
+        }
