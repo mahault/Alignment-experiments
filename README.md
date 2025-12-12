@@ -86,6 +86,7 @@ Alignment-experiments/
 │   │   ├── si_lava.py                 # Single-agent EFE planner
 │   │   ├── si_empathy_lava.py         # Empathy planner (NumPy)
 │   │   ├── jax_si_empathy_lava.py     # Empathy planner (JAX - 50-100x faster)
+│   │   ├── jax_hierarchical_planner.py # Hierarchical zone-based planner (JAX)
 │   │   └── si_tom_F_prior.py          # Flexibility-aware ToM planner
 │   │
 │   └── metrics/
@@ -95,7 +96,7 @@ Alignment-experiments/
 ├── scripts/
 │   ├── run_lava_si.py                 # Single-agent demo
 │   ├── run_lava_empathy.py            # Two-agent empathy demo
-│   └── run_empathy_experiments.py     # Full Experiment 1/2 sweeps
+│   └── run_empathy_sweep.py           # Full empathy sweep experiments
 │
 ├── experiments/
 │   ├── exp1_flex_vs_efe.py            # Measure F–EFE correlation
@@ -234,39 +235,102 @@ python run_all_tests.py
 
 ---
 
-## 5. Experiments
+## 5. Running Experiments
 
-### Experiment 1: Does flexibility emerge naturally?
+### Main Experiment: Empathy Sweep
 
-**Research question**: Do empathic agents naturally preserve flexibility?
+The primary experiment script is `scripts/run_empathy_sweep.py`, which tests empathy effects across layouts and agent configurations.
 
-**Conditions**:
-- Empathy α ∈ {0, 0.5, 1.0}
-- No flexibility prior (κ = 0)
-
-**Outputs**:
-- F_joint vs G_joint correlations
-- Collision rates (cell + edge)
-- Coordination behaviors
-- Policy selection heatmaps
-
-**Run**:
+**Command-line options**:
 ```bash
-python experiments/exp1_flex_vs_efe.py
+python scripts/run_empathy_sweep.py [OPTIONS]
+
+Options:
+  --layouts LAYOUT [LAYOUT ...]   # Specific layouts (default: all)
+  --mode {symmetric,asymmetric,both}
+      symmetric   : Only α_i == α_j (e.g., 0.0/0.0, 0.5/0.5, 1.0/1.0)
+      asymmetric  : Full grid of (α_i, α_j) combinations
+      both        : Both sweeps (skips duplicates)
+  --hierarchical  # Use hierarchical zone planner (faster, for bottleneck layouts)
+  --verbose       # Print every timestep (for debugging)
+  --seeds N       # Number of seeds (default: 1, env is deterministic)
+  --horizon N     # Planning horizon (default: 4)
+  --max-steps N   # Max timesteps per episode (default: 15)
 ```
 
-### Experiment 2: Does a flexibility-aware prior improve coordination?
+**Recommended runs**:
 
-**Research question**: Can explicit flexibility priors reduce coordination failures?
-
-**Conditions**:
-- Fixed empathy: α = 0.5
-- Flexibility prior strength: κ ∈ {0, 0.5, 1.0, 2.0}
-- Other-agent flexibility weight: β ∈ [0, 1]
-
-**Run**:
 ```bash
-python experiments/exp2_flex_prior.py
+# Quick test on hierarchical layouts (vertical_bottleneck, symmetric_bottleneck, narrow)
+python scripts/run_empathy_sweep.py --layouts vertical_bottleneck --mode asymmetric --hierarchical
+
+# Full hierarchical experiment (fastest)
+python scripts/run_empathy_sweep.py --layouts vertical_bottleneck symmetric_bottleneck narrow --mode both --hierarchical
+
+# All layouts (flat planner fallback for non-hierarchical layouts - slower)
+python scripts/run_empathy_sweep.py --mode both --hierarchical
+
+# Debug a specific case with verbose output
+python scripts/run_empathy_sweep.py --layouts vertical_bottleneck --mode asymmetric --hierarchical --verbose
+```
+
+### Hierarchical vs Flat Planner
+
+| Planner | Supported Layouts | Speed | Use Case |
+|---------|-------------------|-------|----------|
+| **Hierarchical** | `vertical_bottleneck`, `symmetric_bottleneck`, `narrow` | Fast (~0.1s/episode) | Bottleneck coordination |
+| **Flat** | All layouts | Slow (~30-60s/episode) | General purpose |
+
+The hierarchical planner decomposes the grid into **zones** and plans at two levels:
+1. **High-level**: Zone transitions (STAY, FORWARD, BACK)
+2. **Low-level**: Within-zone navigation to subgoals
+
+This reduces complexity from O(5^H) to O(3^H × 5^h) where H=high-level horizon, h=low-level horizon.
+
+### Output Files
+
+Results are saved to `results/empathy_sweep_YYYYMMDD_HHMMSS.csv` with columns:
+
+| Column | Description |
+|--------|-------------|
+| `layout`, `start_config` | Environment and starting positions |
+| `alpha_i`, `alpha_j` | Empathy parameters for each agent |
+| `both_success` | Both agents reached their goals without collision |
+| `cell_collision`, `edge_collision` | Collision types |
+| `paralysis` | Agents got stuck (cyclic behavior or mutual yielding) |
+| `trajectory_i`, `trajectory_j` | Full position sequences |
+| `G_i`, `G_j` | Accumulated expected free energy |
+
+### Interpreting Results
+
+**Key metrics**:
+
+1. **Success rate** (`both_success`): Both agents reach goals without collision
+2. **Collision rate** (`cell_collision | edge_collision`): Agents crashed
+3. **Paralysis rate** (`paralysis`): Agents got stuck in loops or mutual yielding
+
+**Expected patterns by empathy configuration**:
+
+| α_i | α_j | Expected Outcome |
+|-----|-----|------------------|
+| 0.0 | 0.0 | **Collision** - Both selfish, rush forward, crash |
+| 0.0 | 0.5+ | **Success** - Selfish i rushes, empathetic j yields |
+| 0.5+ | 0.0 | **Success** - Empathetic i yields, selfish j rushes |
+| 0.5+ | 0.5+ | **Paralysis** - "After you" deadlock, both too polite |
+
+**Analyzing trajectories**:
+- Look at `trajectory_i` and `trajectory_j` columns
+- Yielding behavior: agent stays in place while other passes
+- Example success: `i: (1,2)→(2,2)→(3,2)→...→goal`, `j: (4,5)→(4,5)→(4,5)→(3,5)→...→goal`
+  - j waited (repeated position) while i passed through bottleneck
+
+### Legacy Experiments
+
+For flexibility-EFE correlation and flexibility-aware priors:
+
+```bash
+python experiments/exp1_flex_vs_efe.py   # Flexibility vs EFE correlation
+python experiments/exp2_flex_prior.py    # Flexibility-aware prior experiments
 ```
 
 ---
@@ -306,9 +370,14 @@ python scripts/run_lava_si.py
 python scripts/run_lava_empathy.py
 ```
 
+**Empathy sweep (hierarchical planner)**:
+```bash
+python scripts/run_empathy_sweep.py --layouts vertical_bottleneck --mode asymmetric --hierarchical
+```
+
 **Full experiment sweep**:
 ```bash
-python scripts/run_empathy_experiments.py --scenarios crossed_goals --alphas 0.5 1.0
+python scripts/run_empathy_sweep.py --mode both --hierarchical
 ```
 
 ---

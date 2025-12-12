@@ -261,6 +261,7 @@ def create_jax_vertical_bottleneck_layout(
 
 def create_jax_symmetric_bottleneck_layout(
     width: int = 10,
+    height: int = None,  # Ignored - symmetric_bottleneck is always height=4
     goal_pos: Tuple[int, int] = None,
 ) -> JaxZonedLayout:
     """
@@ -350,6 +351,7 @@ def create_jax_symmetric_bottleneck_layout(
 
 def create_jax_narrow_layout(
     width: int = 6,
+    height: int = None,  # Ignored - narrow is always height=3
     goal_pos: Tuple[int, int] = None,
 ) -> JaxZonedLayout:
     """

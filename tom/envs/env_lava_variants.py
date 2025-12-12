@@ -239,9 +239,13 @@ def create_risk_reward(width: int = 8) -> LavaLayout:
         safe_cells.append((x, 1))
         safe_cells.append((x, 2))
 
+    # Goal cells - must be safe (not lava)
+    safe_cells.append((0, 1))
+    safe_cells.append((0, 2))
+
     # Each agent has goal in their own row at leftmost column
-    # Agent 0: starts (7, 1), goal (0, 1) - can take risky row 0 or safe detour
-    # Agent 1: starts (7, 2), goal (0, 2) - same trade-off
+    # Agent 0: starts (7, 1), goal (0, 1) - must go via risky row 0
+    # Agent 1: starts (7, 2), goal (0, 2) - must go via risky row 0
     goal_positions = [(0, 1), (0, 2)]
 
     # Agents start at right side
