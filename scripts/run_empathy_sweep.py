@@ -96,7 +96,10 @@ class ExperimentConfig:
             # Same coarse grid: 3x3 = 9 combinations
             self.alphas_asymmetric = [0.0, 0.5, 1.0]
         if self.start_configs is None:
-            self.start_configs = ["A", "B"]
+            # A: Original config
+            # B: Swapped agents (positions AND goals swapped)
+            # C: Swapped goals only (same positions, each agent wants other's goal)
+            self.start_configs = ["A", "B", "C"]
 
 
 # =============================================================================
