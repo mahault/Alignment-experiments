@@ -655,6 +655,194 @@ tests/
 
 ---
 
+## Phase 8: Alternative Empathy Formulations (Future Experiments)
+
+**Status**: Proposed
+
+**References**:
+- Sanjeev Namjoshi's empathy paper knowledge transfer (12/16/25)
+- Demakes et al. 2023: Iterated Prisoner's Dilemma with Active Inference
+- Pattisapu et al. 2024: Free Energy in a Circumplex Model of Emotion
+- Pitliya et al. 2025: Theory of Mind Using Active Inference
+
+### 8.1 Current Implementation vs Proposed Alternatives
+
+| Aspect | Current Implementation | Sanjeev's Approach |
+|--------|----------------------|-------------------|
+| **Formula** | `G_social = G_self + α * G_other` (additive) | `G_social = (1-α) * G_self + α * G_other` (weighted average) |
+| **Other-Model** | Distinct model (different goals) | Copy of self-model (assumes other behaves like me) |
+| **VFE** | Only EFE | Both VFE and EFE |
+| **Emotional State** | Not tracked | Valence/arousal from VFE/EFE |
+| **alpha_other** | Two params: α (self) + α_other (belief about other) | Single empathy parameter |
+
+### 8.2 Experiment: Weighted Average vs Additive Empathy
+
+**Hypothesis**: Weighted average keeps G_social bounded, may produce different coordination dynamics.
+
+```python
+# Current (additive):
+G_social = G_self + alpha * G_other
+# When alpha=1: G_social = G_self + G_other (can be large)
+
+# Alternative (weighted average):
+G_social = (1 - alpha) * G_self + alpha * G_other
+# When alpha=1: G_social = G_other (bounded, fully altruistic)
+# When alpha=0.5: G_social = 0.5*G_self + 0.5*G_other (equal weight)
+```
+
+**Implementation**:
+```python
+# In si_empathy_lava.py, add parameter:
+class EmpathicLavaPlanner:
+    def __init__(self, ..., empathy_mode="additive"):
+        self.empathy_mode = empathy_mode
+
+    def compute_G_social(self, G_self, G_other, alpha):
+        if self.empathy_mode == "additive":
+            return G_self + alpha * G_other
+        elif self.empathy_mode == "weighted":
+            return (1 - alpha) * G_self + alpha * G_other
+```
+
+**Experiment**: Run sweep with both modes, compare coordination outcomes.
+
+### 8.3 Experiment: Self-Model as Other-Model
+
+**Hypothesis**: Assuming other agent has same model (copy of self) may produce
+different ToM predictions than using distinct models.
+
+**Current approach**: Each agent has distinct goal, so models differ.
+**Alternative**: Agent spawns copy of own model to simulate other.
+
+**Challenge**: In spatial task, agents have DIFFERENT goals. Copying self-model
+means assuming other wants MY goal, which is wrong.
+
+**Resolution**: Copy model structure but substitute other's known goal:
+```python
+def create_other_model(self_model, other_goal):
+    """Create other-model by copying self but with other's goal."""
+    other_model = copy.deepcopy(self_model)
+    other_model.C["location_obs"] = compute_C_for_goal(other_goal)
+    return other_model
+```
+
+### 8.4 Experiment: VFE-Based Emotional State
+
+**From Pattisapu et al. 2024**: Compute valence/arousal from VFE/EFE.
+
+- **Arousal** ∝ EFE (expected uncertainty/action urgency)
+- **Valence** ∝ -VFE (negative surprise = positive valence)
+
+**Implementation**:
+```python
+def compute_emotional_state(qs, A, B, C, action):
+    """Compute valence and arousal from free energy quantities."""
+    # VFE: surprise at current observation
+    vfe = compute_vfe(qs, A, observation)
+
+    # EFE: expected future uncertainty
+    efe = compute_efe(qs, A, B, C, action)
+
+    # Map to circumplex
+    valence = -vfe  # Low surprise = positive valence
+    arousal = efe   # High EFE = high arousal (uncertainty)
+
+    return valence, arousal
+```
+
+**Experiment**: Track emotional state over episode, analyze how empathy affects
+emotional dynamics during coordination.
+
+### 8.5 Experiment: Sophisticated Inference Tree (Pitliya et al. 2025)
+
+**Current ToM**: Recursive depth-2 prediction ("I think you think I...")
+**Alternative**: Full tree expansion with backward induction.
+
+**Tree structure**:
+```
+Step 1: My beliefs → My actions
+Step 2: My action → Other's observation → Other's beliefs
+Step 3: Other's beliefs → Other's actions
+Step 4: Other's action → My observation → My beliefs (updated)
+Step 5: Backward pass computing EFE up the tree
+```
+
+**Empathy in tree** (two options from Pitliya et al.):
+1. **Weight EFE contributions**: During backward pass, weight focal vs other agent's EFE
+2. **Precision on expansion**: Empathy controls precision on other's action/observation nodes
+
+**Challenge**: Requires significant refactoring to implement tree-based planning.
+May be slower than current recursive approach.
+
+### 8.6 Experiment: Probability Distribution over Other's Actions
+
+**Problem identified**: Current ToM assumes other takes argmin(G_j), but simultaneous
+play means both agents plan at same time → coordination failures.
+
+**From Sanjeev's discussion**: "You can have a sort of probability distribution over
+what they might do and then suddenly it really is an inference problem."
+
+**Implementation**:
+```python
+def predict_other_action_distribution(self, qs_other, qs_self, ...):
+    """Return distribution over other's actions, not just argmin."""
+    G_other = self.compute_G_for_other(qs_other, qs_self)
+
+    # Softmax over negative EFE (lower G = higher probability)
+    p_actions = softmax(-gamma * G_other)
+
+    return p_actions  # Shape: [num_actions]
+
+def compute_expected_collision(self, my_action, p_other_actions):
+    """Expected collision probability given distribution over other's actions."""
+    expected_collision = 0.0
+    for a_other, p_a in enumerate(p_other_actions):
+        collision_prob = self.P_collision[my_action, a_other]
+        expected_collision += p_a * collision_prob
+    return expected_collision
+```
+
+**Experiment**: Compare argmin (deterministic) vs softmax (stochastic) ToM predictions.
+
+### 8.7 Symmetry Breaking Problem
+
+**From transcript**: "If you don't have any symmetry breaking, then the agents get
+stuck in a recursive loop of prediction where I think you're going to do the thing
+I would do and therefore I'll do the other thing."
+
+**Current solution**: Asymmetric models (different goals) + alpha_other parameter.
+
+**Alternative solutions to test**:
+1. **Agent ID priority**: Lower ID agent has "right of way"
+2. **Stochastic tie-breaking**: When G values are close, sample randomly
+3. **Communication round**: Agents announce intentions before committing
+4. **Learning from history**: Track past coordination outcomes, update priors
+
+### 8.8 B-Matrix Learning
+
+**From Demakes et al. 2023**: Learning transition dynamics over iterated games.
+
+**Current**: B matrix is fixed (known environment dynamics).
+**Alternative**: Learn B from experience, see how learning rate affects cooperation emergence.
+
+```python
+# Dirichlet prior over B columns
+b_prior = jnp.ones((num_states, num_states, num_actions)) * 0.1
+
+def update_B_belief(b_counts, s_prev, s_next, action):
+    """Bayesian update of B matrix belief."""
+    b_counts = b_counts.at[s_next, s_prev, action].add(1.0)
+    return b_counts
+
+def get_B_posterior(b_counts, b_prior):
+    """Expected B matrix from Dirichlet posterior."""
+    return (b_counts + b_prior) / (b_counts + b_prior).sum(axis=0, keepdims=True)
+```
+
+**Experiment**: Compare fixed B vs learned B, vary learning rate, measure cooperation emergence.
+
+---
+
 ## Success Criteria
 
 1. **Memory**: Can run horizon-equivalent-7 without OOM
