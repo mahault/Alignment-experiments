@@ -1,355 +1,51 @@
-# Path Flexibility, Empathy, and Theory of Mind in Active Inference
+# Multi-Agent Theory of Mind with Empathy in Active Inference
 
 This repository implements a framework for studying **coordination, alignment, and robustness** in multi-agent systems through:
 
 - **Active Inference & Expected Free Energy (EFE)**
-- **Theory of Mind (ToM) planning**
+- **Recursive Theory of Mind (ToM) planning**
 - **Empathy-weighted decision-making**
-- **Path flexibility metrics** (empowerment, returnability, overlap)
+- **JAX-accelerated computation** (20-100x speedup)
 
-The central research goal is to test whether **alignment emerges naturally** when agents attempt to preserve each other's future option sets — and whether a **flexibility-aware prior** improves cooperative behavior in challenging environments.
-
----
-
-## 1. Conceptual Overview
-
-### Active Inference
-
-Agents select policies by minimizing **expected free energy**:
-
-\[
-q(\pi) \propto \exp(-\gamma G(\pi))
-\]
-
-where \( G(\pi) \) combines:
-- **Pragmatic value**: Preference satisfaction (goal-seeking, lava avoidance)
-- **Epistemic value**: Information gain (exploration)
-- **Collision avoidance**: Multi-agent coordination penalties
-
-### Theory of Mind (ToM)
-
-Agents maintain generative models of other agents' beliefs and policies. During planning, each agent simulates the other's EFE landscape and best-responds to predicted actions.
-
-### Empathy
-
-Empathy parameter α ∈ [0,1] weights the other agent's EFE:
-
-\[
-G_{\text{social}}^i(\pi) = G_i(\pi) + \alpha\, G_j(\pi)
-\]
-
-- α = 0 → purely selfish
-- α = 1 → fully prosocial
-
-### Path Flexibility
-
-Path flexibility measures how robust a future trajectory is using:
-
-- **Empowerment** — how many future observations remain under agent control
-- **Returnability** — probability of reaching common safe outcomes
-- **Outcome overlap** — similarity of predicted future outcomes between agents
-
-\[
-F(\pi) = \lambda_E E(\pi) + \lambda_R R(\pi) + \lambda_O O(\pi)
-\]
-
-High flexibility ⇒ agents preserve each other's future option sets.
-
-### Flexibility-Aware Policy Prior (Experiment 2)
-
-A policy prior biases agents toward flexible (robust) trajectories:
-
-\[
-p(\pi) \propto \exp\big(\kappa \left[F_i(\pi) + \beta F_j(\pi)\right]\big)
-\]
-
-Combined objective:
-
-\[
-J_i(\pi)=G_i + \alpha G_j - \frac{\kappa}{\gamma}[F_i + \beta F_j]
-\]
+The central research goal is to test whether **alignment emerges naturally** when agents attempt to preserve each other's future option sets — and whether **asymmetric empathy** enables coordination in constrained environments.
 
 ---
 
-## 2. Repository Structure
+## Table of Contents
 
-```text
-Alignment-experiments/
-│
-├── tom/
-│   ├── models/
-│   │   └── model_lava.py              # LavaModel & LavaAgent (JAX)
-│   ├── envs/
-│   │   ├── env_lava_v2.py             # Multi-layout environment
-│   │   └── env_lava_variants.py       # Layout definitions
-│   ├── planning/
-│   │   ├── si_lava.py                 # Single-agent EFE planner
-│   │   ├── si_empathy_lava.py         # Empathy planner (NumPy)
-│   │   ├── jax_si_empathy_lava.py     # Empathy planner (JAX - 50-100x faster)
-│   │   ├── jax_hierarchical_planner.py # Hierarchical zone-based planner (JAX)
-│   │   └── si_tom_F_prior.py          # Flexibility-aware ToM planner
-│   │
-│   └── metrics/
-│       ├── path_flexibility.py        # F, E, R, O metrics (NumPy)
-│       └── jax_path_flexibility.py    # F, E, R, O metrics (JAX - 60-130x faster)
-│
-├── scripts/
-│   ├── run_lava_si.py                 # Single-agent demo
-│   ├── run_lava_empathy.py            # Two-agent empathy demo
-│   └── run_empathy_sweep.py           # Full empathy sweep experiments
-│
-├── experiments/
-│   ├── exp1_flex_vs_efe.py            # Measure F–EFE correlation
-│   └── exp2_flex_prior.py             # Flexibility-aware prior experiments
-│
-└── tests/                             # Comprehensive test suite
-```
+1. [Quick Start](#1-quick-start)
+2. [Running Experiments](#2-running-experiments)
+3. [Architecture Overview](#3-architecture-overview)
+4. [Code Structure](#4-code-structure)
+5. [Key Concepts](#5-key-concepts)
+6. [Understanding the Results](#6-understanding-the-results)
+7. [JAX Acceleration](#7-jax-acceleration)
+8. [Future Roadmap](#8-future-roadmap)
+9. [Citation](#9-citation)
 
 ---
 
-## 3. Core Components
-
-### LavaModel (JAX Generative Model)
-
-Implements proper multi-agent Active Inference with:
-
-**Joint B matrix**: `B[s', s, s_other, a]` conditions transitions on other agent's position
-- Enforces single-occupancy: can't move into occupied cells
-- Prevents edge collisions: both agents blocked if trying to swap positions
-
-**Multi-modal observations**:
-- `location_obs`: Agent's own position
-- `edge_obs`: Edge being traversed (for path tracking)
-- `cell_collision_obs`: Same-cell collision detection
-- `edge_collision_obs`: Edge-swap collision detection (crossing same edge from opposite sides)
-
-**Collision penalties in C matrix**:
-- Cell collision: C = -100 (agents in same cell)
-- Edge collision: C = -100 (agents swapping through same edge)
-- Lava: C = -100
-- Goal: C = +10
-
-**Multi-step policies** (horizon H > 1):
-- Enables planning of multi-step detours and turn-taking sequences
-
-### EmpathicLavaPlanner
-
-Implements Theory of Mind with recursive planning:
-
-**Single-step (H=1)**: Conditions G_j on i's predicted next position
-
-**Multi-step (H>1)**: Full recursive rollout over horizon
-- For each timestep t:
-  1. i takes action a_i[t] (committed)
-  2. j observes i's new position
-  3. j computes G_j for ALL actions and selects best response
-  4. Both beliefs updated for next timestep
-- Accumulated EFE over full horizon
-
-**JAX acceleration**: 50-100x faster than NumPy (enabled by default)
-
-**Empathy weight α**: `G_social = G_i + α * G_j`
-
-### LavaV2Env
-
-Multi-layout environment with:
-- Full observability: agents see both positions
-- Collision detection: cell collisions AND edge collisions
-- Layouts: Wide, Bottleneck, Narrow, Crossed Goals, Risk-Reward
-
----
-
-## 4. JAX Acceleration 🚀
-
-JAX provides **50-130x speedup** for planning, making horizon 4-5 experiments feasible.
-
-### Performance
-
-| Component | Horizon | Policies | NumPy | JAX | Speedup |
-|-----------|---------|----------|-------|-----|---------|
-| **Empathy Planning** | H=3 | 125 | ~45s | ~0.5s | **90x** |
-| | H=4 | 625 | ~5 min | ~3s | **100x** |
-| **Path Flexibility** | H=3 | 125 | ~45s | ~0.7s | **60x** |
-| | H=5 | 3125 | ~30 min | ~15s | **130x** |
-
-**Full episode (20 timesteps, H=3)**: 15 min → 10s (90x speedup)
-
-### Usage
-
-**Default behavior** (JAX enabled automatically):
-```python
-from tom.planning.si_empathy_lava import EmpathicLavaPlanner
-
-# Automatically uses JAX (50-100x faster)
-planner = EmpathicLavaPlanner(agent_i, agent_j, alpha=0.5)
-
-# Falls back to NumPy if JAX not installed (with warning)
-```
-
-**Explicit control**:
-```python
-# Use JAX (default)
-planner = EmpathicLavaPlanner(agent_i, agent_j, alpha=0.5, use_jax=True)
-
-# Disable JAX (for debugging)
-planner = EmpathicLavaPlanner(agent_i, agent_j, alpha=0.5, use_jax=False)
-```
-
-**Environment variables**:
-```bash
-# Disable JAX
-export USE_JAX=0
-
-# Force CPU (no GPU)
-export JAX_FORCE_CPU=1
-
-# Limit GPU memory to 50%
-export JAX_MEMORY_FRACTION=0.5
-```
-
-### Installation
-
-**Basic (NumPy only)**:
-```bash
-pip install -r requirements.txt
-```
-
-**With JAX (recommended for 50-130x speedup)**:
-```bash
-pip install -r requirements.txt
-pip install jax  # CPU version
-
-# OR for GPU support:
-pip install jax[cuda12]  # CUDA 12
-```
-
-### Testing
-
-```bash
-# Quick smoke test
-python test_jax_planner.py
-
-# Full test suite
-python run_all_tests.py
-```
-
----
-
-## 5. Running Experiments
-
-### Main Experiment: Empathy Sweep
-
-The primary experiment script is `scripts/run_empathy_sweep.py`, which tests empathy effects across layouts and agent configurations.
-
-**Command-line options**:
-```bash
-python scripts/run_empathy_sweep.py [OPTIONS]
-
-Options:
-  --layouts LAYOUT [LAYOUT ...]   # Specific layouts (default: all)
-  --mode {symmetric,asymmetric,both}
-      symmetric   : Only α_i == α_j (e.g., 0.0/0.0, 0.5/0.5, 1.0/1.0)
-      asymmetric  : Full grid of (α_i, α_j) combinations
-      both        : Both sweeps (skips duplicates)
-  --hierarchical  # Use hierarchical zone planner (faster, for bottleneck layouts)
-  --verbose       # Print every timestep (for debugging)
-  --seeds N       # Number of seeds (default: 1, env is deterministic)
-  --horizon N     # Planning horizon (default: 4)
-  --max-steps N   # Max timesteps per episode (default: 15)
-```
-
-**Recommended runs**:
-
-```bash
-# Quick test on hierarchical layouts (vertical_bottleneck, symmetric_bottleneck, narrow)
-python scripts/run_empathy_sweep.py --layouts vertical_bottleneck --mode asymmetric --hierarchical
-
-# Full hierarchical experiment (fastest)
-python scripts/run_empathy_sweep.py --layouts vertical_bottleneck symmetric_bottleneck narrow --mode both --hierarchical
-
-# All layouts (flat planner fallback for non-hierarchical layouts - slower)
-python scripts/run_empathy_sweep.py --mode both --hierarchical
-
-# Debug a specific case with verbose output
-python scripts/run_empathy_sweep.py --layouts vertical_bottleneck --mode asymmetric --hierarchical --verbose
-```
-
-### Hierarchical vs Flat Planner
-
-| Planner | Supported Layouts | Speed | Use Case |
-|---------|-------------------|-------|----------|
-| **Hierarchical** | `vertical_bottleneck`, `symmetric_bottleneck`, `narrow` | Fast (~0.1s/episode) | Bottleneck coordination |
-| **Flat** | All layouts | Slow (~30-60s/episode) | General purpose |
-
-The hierarchical planner decomposes the grid into **zones** and plans at two levels:
-1. **High-level**: Zone transitions (STAY, FORWARD, BACK)
-2. **Low-level**: Within-zone navigation to subgoals
-
-This reduces complexity from O(5^H) to O(3^H × 5^h) where H=high-level horizon, h=low-level horizon.
-
-### Output Files
-
-Results are saved to `results/empathy_sweep_YYYYMMDD_HHMMSS.csv` with columns:
-
-| Column | Description |
-|--------|-------------|
-| `layout`, `start_config` | Environment and starting positions |
-| `alpha_i`, `alpha_j` | Empathy parameters for each agent |
-| `both_success` | Both agents reached their goals without collision |
-| `cell_collision`, `edge_collision` | Collision types |
-| `paralysis` | Agents got stuck (cyclic behavior or mutual yielding) |
-| `trajectory_i`, `trajectory_j` | Full position sequences |
-| `G_i`, `G_j` | Accumulated expected free energy |
-
-### Interpreting Results
-
-**Key metrics**:
-
-1. **Success rate** (`both_success`): Both agents reach goals without collision
-2. **Collision rate** (`cell_collision | edge_collision`): Agents crashed
-3. **Paralysis rate** (`paralysis`): Agents got stuck in loops or mutual yielding
-
-**Expected patterns by empathy configuration**:
-
-| α_i | α_j | Expected Outcome |
-|-----|-----|------------------|
-| 0.0 | 0.0 | **Collision** - Both selfish, rush forward, crash |
-| 0.0 | 0.5+ | **Success** - Selfish i rushes, empathetic j yields |
-| 0.5+ | 0.0 | **Success** - Empathetic i yields, selfish j rushes |
-| 0.5+ | 0.5+ | **Paralysis** - "After you" deadlock, both too polite |
-
-**Analyzing trajectories**:
-- Look at `trajectory_i` and `trajectory_j` columns
-- Yielding behavior: agent stays in place while other passes
-- Example success: `i: (1,2)→(2,2)→(3,2)→...→goal`, `j: (4,5)→(4,5)→(4,5)→(3,5)→...→goal`
-  - j waited (repeated position) while i passed through bottleneck
-
-### Legacy Experiments
-
-For flexibility-EFE correlation and flexibility-aware priors:
-
-```bash
-python experiments/exp1_flex_vs_efe.py   # Flexibility vs EFE correlation
-python experiments/exp2_flex_prior.py    # Flexibility-aware prior experiments
-```
-
----
-
-## 6. Quick Start
+## 1. Quick Start
 
 ### Installation
 
 ```bash
+# Create environment
 conda create -n alignment python=3.10
 conda activate alignment
+
+# Install dependencies
 pip install -r requirements.txt
-pip install jax  # Optional but recommended for 50-130x speedup
+
+# Install JAX (recommended for 20-100x speedup)
+pip install jax  # CPU version
+# OR for GPU: pip install jax[cuda12]
 ```
 
 ### Smoke Test
 
 ```bash
-python smoke_test_tom.py
+python tests/smoke_test_tom.py
 ```
 
 Expected output:
@@ -358,87 +54,377 @@ Expected output:
 - ✅ LavaV2Env reset + step
 - ✅ Collision detection (cell + edge)
 
-### Run Demos
+### Run a Quick Experiment
 
-**Single agent**:
 ```bash
+# Quick test on narrow corridor (18 experiments, ~3 minutes)
+python scripts/run_empathy_sweep.py --layouts narrow --max-steps 10 --seeds 1
+```
+
+---
+
+## 2. Running Experiments
+
+### Main Experiment: Empathy Sweep
+
+The primary script is `scripts/run_empathy_sweep.py`. It tests how different empathy configurations affect coordination.
+
+#### Basic Usage
+
+```bash
+# Run on a single layout
+python scripts/run_empathy_sweep.py --layouts narrow
+
+# Run on multiple layouts
+python scripts/run_empathy_sweep.py --layouts narrow bottleneck wide
+
+# Run all layouts (takes longer)
+python scripts/run_empathy_sweep.py
+```
+
+#### Command-Line Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--layouts` | Layouts to test (space-separated) | All layouts |
+| `--mode` | `symmetric`, `asymmetric`, or `both` | `both` |
+| `--max-steps` | Max timesteps per episode | 15 |
+| `--horizon` | Planning horizon | 4 |
+| `--seeds` | Number of random seeds | 1 |
+| `--hierarchical` | Use hierarchical planner (faster for bottlenecks) | False |
+| `--verbose` | Print every timestep | False |
+
+#### Recommended Experiments
+
+```bash
+# 1. Quick test - narrow corridor, asymmetric empathy
+python scripts/run_empathy_sweep.py --layouts narrow --mode asymmetric --max-steps 10 --seeds 1
+
+# 2. Full sweep on bottleneck layouts (uses hierarchical planner)
+python scripts/run_empathy_sweep.py --layouts vertical_bottleneck symmetric_bottleneck --hierarchical
+
+# 3. Compare symmetric vs asymmetric empathy
+python scripts/run_empathy_sweep.py --layouts bottleneck --mode both
+
+# 4. Debug a specific case
+python scripts/run_empathy_sweep.py --layouts narrow --mode asymmetric --verbose
+```
+
+#### Available Layouts
+
+| Layout | Description | Difficulty |
+|--------|-------------|------------|
+| `wide` | 6x3 open corridor | Easy |
+| `narrow` | 6x3 single-file corridor | Hard |
+| `bottleneck` | Wide with central chokepoint | Medium |
+| `vertical_bottleneck` | Vertical with central chokepoint | Medium |
+| `symmetric_bottleneck` | Equal-sized zones around chokepoint | Medium |
+| `crossed_goals` | Goals require path crossing | Hard |
+| `double_bottleneck` | Two sequential chokepoints | Hard |
+| `passing_bay` | Narrow with one passing spot | Medium |
+| `risk_reward` | Safe long path vs risky short path | Medium |
+| `t_junction` | T-shaped intersection | Hard |
+| `asymmetric_detour` | One agent must detour | Medium |
+
+### Other Scripts
+
+```bash
+# Test asymmetric empathy scenarios
+python scripts/test_asymmetric_empathy.py
+
+# Single-agent demo
 python scripts/run_lava_si.py
-```
 
-**Empathy demo**:
-```bash
+# Two-agent empathy demo
 python scripts/run_lava_empathy.py
-```
 
-**Empathy sweep (hierarchical planner)**:
-```bash
-python scripts/run_empathy_sweep.py --layouts vertical_bottleneck --mode asymmetric --hierarchical
-```
-
-**Full experiment sweep**:
-```bash
-python scripts/run_empathy_sweep.py --mode both --hierarchical
+# Diagnose ToM behavior
+python scripts/diagnose_tom.py
 ```
 
 ---
 
-## 7. Key Features
+## 3. Architecture Overview
 
-### Edge Collision Detection
+### How Planning Works
 
-The system now properly detects **edge collisions** (swap collisions):
-- When agent i moves A→B and agent j moves B→A simultaneously, both are blocked
-- Edge collision is a separate observation modality with its own A matrix and C preferences
-- Critical for crossed-goals scenarios where agents need to coordinate path timing
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    EmpathicLavaPlanner                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. RECURSIVE ToM: Predict other agent's action            │
+│     ┌──────────────────────────────────────────────────┐   │
+│     │  predict_other_action_recursive_jax()            │   │
+│     │  - depth=2: I think that you think that I...     │   │
+│     │  - horizon=3: Multi-step lookahead               │   │
+│     │  - Uses JAX JIT for 20x speedup                  │   │
+│     └──────────────────────────────────────────────────┘   │
+│                         ↓                                   │
+│  2. EMPATHIC EFE: Compute G_social for all policies        │
+│     ┌──────────────────────────────────────────────────┐   │
+│     │  compute_empathic_G_jax()                        │   │
+│     │  - G_social = G_self + α * G_other               │   │
+│     │  - Collision detection (cell + edge)             │   │
+│     │  - vmap over 125-625 policies                    │   │
+│     └──────────────────────────────────────────────────┘   │
+│                         ↓                                   │
+│  3. ACTION SELECTION: Softmax over G_social                │
+│     ┌──────────────────────────────────────────────────┐   │
+│     │  action = argmin(G_social)                       │   │
+│     │  OR sample from q(π) ∝ exp(-γ * G_social)        │   │
+│     └──────────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-### Theory of Mind with Proper Conditioning
+### Collision Detection
 
-Agents model how their actions affect the other agent:
+The system detects two types of collisions:
+
+1. **Cell collision**: Both agents end up in the same cell
+   - Detected via `A_cell_collision` observation matrix
+   - Penalty in `C_cell_collision`
+
+2. **Edge collision (swap)**: Agents try to pass through each other
+   - Agent i moves A→B while agent j moves B→A
+   - Detected via swap probability computation
+   - Same penalty as cell collision
+
+---
+
+## 4. Code Structure
+
+```
+Alignment-experiments/
+│
+├── tom/                          # Core library
+│   ├── models/
+│   │   └── model_lava.py         # LavaModel: A, B, C, D matrices
+│   │
+│   ├── envs/
+│   │   ├── env_lava_v2.py        # Multi-agent environment
+│   │   └── env_lava_variants.py  # Layout definitions
+│   │
+│   └── planning/
+│       ├── si_empathy_lava.py    # EmpathicLavaPlanner (main class)
+│       ├── jax_si_empathy_lava.py # JAX-accelerated functions
+│       └── jax_hierarchical_planner.py # Hierarchical zone planner
+│
+├── scripts/                      # Runnable experiments
+│   ├── run_empathy_sweep.py      # Main experiment sweep
+│   ├── test_asymmetric_empathy.py # ToM verification tests
+│   ├── run_lava_empathy.py       # Two-agent demo
+│   └── diagnose_tom.py           # Debug ToM predictions
+│
+├── tests/                        # Test suite
+│   ├── smoke_test_tom.py         # Quick sanity check
+│   ├── test_jax_planner.py       # JAX correctness tests
+│   └── run_all_tests.py          # Full test suite
+│
+├── results/                      # Experiment outputs
+│   ├── empathy_sweep_*.csv       # Sweep results
+│   └── figs/                     # Generated plots
+│
+└── HIERARCHICAL_PLANNER_ROADMAP.md # Future development plans
+```
+
+### Key Files Explained
+
+| File | Purpose |
+|------|---------|
+| `si_empathy_lava.py` | Main `EmpathicLavaPlanner` class. Orchestrates ToM + empathy |
+| `jax_si_empathy_lava.py` | JAX-accelerated ToM functions (`predict_other_action_recursive_jax`) |
+| `run_empathy_sweep.py` | Runs experiments across layouts and empathy configurations |
+| `test_asymmetric_empathy.py` | Validates ToM produces correct predictions |
+
+---
+
+## 5. Key Concepts
+
+### Theory of Mind (ToM)
+
+Agents recursively model each other's beliefs and actions:
+
+```
+Depth 0: "What will j do?" → Assume j stays in place
+Depth 1: "What will j do, given j thinks I'll stay?" → Better prediction
+Depth 2: "What will j do, given j thinks I think j stays?" → Even better
+```
+
+The `TOM_DEPTH = 2` and `TOM_HORIZON = 3` parameters control recursion depth and lookahead.
+
+### Empathy Parameter (α)
+
+The empathy parameter α ∈ [0, 1] determines how much an agent weighs the other's utility:
+
+```
+G_social(π) = G_self(π) + α * G_other(π)
+```
+
+| α value | Behavior |
+|---------|----------|
+| α = 0 | Purely selfish - only cares about own goals |
+| α = 0.5 | Balanced - weighs both equally |
+| α = 1.0 | Fully empathic - other's utility as important as own |
+
+### Asymmetric Empathy
+
+The key insight: when agents have **different** empathy levels, coordination emerges:
+
+| Agent i (α_i) | Agent j (α_j) | Outcome |
+|---------------|---------------|---------|
+| 0.0 (selfish) | 0.0 (selfish) | Both rush → **Collision** |
+| 0.0 (selfish) | 1.0 (empathic) | i rushes, j yields → **Success** |
+| 1.0 (empathic) | 0.0 (selfish) | i yields, j rushes → **Success** |
+| 1.0 (empathic) | 1.0 (empathic) | Both yield → **Paralysis** (deadlock) |
+
+### Expected Free Energy (EFE)
+
+Each action is evaluated by its expected free energy:
+
+```
+G(a) = -pragmatic - epistemic
+     = -E[utility(observations)] - info_gain(about_world)
+```
+
+Components:
+- **Pragmatic**: Goal-seeking, collision avoidance
+- **Epistemic**: Information gain (exploration)
+
+---
+
+## 6. Understanding the Results
+
+### Output Files
+
+Results are saved to `results/empathy_sweep_YYYYMMDD_HHMMSS.csv`:
+
+| Column | Description |
+|--------|-------------|
+| `layout` | Environment layout name |
+| `start_config` | Starting configuration (A, B, C, D) |
+| `alpha_i`, `alpha_j` | Empathy parameters |
+| `both_success` | Both agents reached goals without collision |
+| `cell_collision` | Agents ended up in same cell |
+| `edge_collision` | Agents tried to swap positions |
+| `paralysis` | Agents got stuck (both yielding) |
+| `steps` | Number of timesteps |
+| `trajectory_i`, `trajectory_j` | Position sequences |
+
+### Key Metrics
+
+1. **Success rate**: Both agents reach goals without collision
+2. **Collision rate**: Agents crashed into each other
+3. **Paralysis rate**: Both agents got stuck yielding to each other
+
+### Analyzing Results
+
 ```python
-# For each candidate action k:
-    qs_i_next = propagate_belief(qs_i, action=k)  # i's predicted position
-    G_j_best[k] = min_over_j_actions(G_j | qs_i_next)  # j's best response
-    G_social[k] = G_i[k] + α * G_j_best[k]  # Combined EFE
+import pandas as pd
+
+# Load results
+df = pd.read_csv("results/empathy_sweep_*.csv")
+
+# Success rate by empathy configuration
+success = df.groupby(['alpha_i', 'alpha_j'])['both_success'].mean()
+print(success.unstack())
+
+# Which layouts have highest collision rate?
+collision_by_layout = df.groupby('layout')['cell_collision'].mean()
+print(collision_by_layout.sort_values(ascending=False))
 ```
 
-Now empathy actually affects policy selection by predicting how i's actions impact j.
+### Interpreting Trajectories
 
-### Multi-Step Planning
-
-With horizon H > 1, agents can plan sequences like:
-- **Bottleneck detour**: "UP → RIGHT × 3 → DOWN" (requires H ≥ 4)
-- **Crossed goals**: "WAIT × 2 → RIGHT × 5" (turn-taking, H ≥ 3)
-- **Risk-reward trade-offs**: "Risky short path vs safe detour"
+Look for yielding behavior in trajectories:
+```
+# Agent yields if they stay in place while other passes
+trajectory_j: (4,1) → (4,1) → (4,1) → (3,1) → (2,1) → goal
+                 ↑ stayed    ↑ stayed    ↑ started moving
+```
 
 ---
 
-## 8. Key Findings
+## 7. JAX Acceleration
 
-### Empirical Results
+JAX provides **20-100x speedup** for planning computations.
 
-- **Empathy enables coordination** in spatially open environments (wide corridor)
-- **Asymmetric empathy** (one empathic, one selfish) → successful coordination
-- **Symmetric high empathy** (both α=1.0) → coordination deadlock (over-cooperation)
-- **Edge collision detection** prevents ghosting artifacts in crossed-goals scenarios
-- **Flexibility-aware priors** trade efficiency for robustness
+### Performance Comparison
 
-### Theoretical Insights
+| Function | NumPy | JAX (cached) | Speedup |
+|----------|-------|--------------|---------|
+| `predict_other_action_recursive` | ~0.5s | ~0.025s | **20x** |
+| `compute_empathic_G` (125 policies) | ~45s | ~0.5s | **90x** |
+| `compute_empathic_G` (625 policies) | ~5min | ~3s | **100x** |
 
-- Collision avoidance in active inference requires proper observation modalities (cell + edge)
-- Theory of Mind requires conditioning on predicted future states, not just current states
-- Pure empathy (α=1.0) can lead to pathological coordination patterns (mirroring/deadlock)
+### Usage
 
-(See `results/` and analysis notebooks for quantitative details)
+JAX is enabled by default when available:
+
+```python
+from tom.planning.si_empathy_lava import EmpathicLavaPlanner
+
+# Automatically uses JAX (20-100x faster)
+planner = EmpathicLavaPlanner(agent_i, agent_j, alpha=0.5)
+
+# Disable JAX for debugging
+planner = EmpathicLavaPlanner(agent_i, agent_j, alpha=0.5, use_jax=False)
+```
+
+### First-Call Compilation
+
+JAX compiles functions on first call (JIT). Expect:
+- First call: ~1s (compilation)
+- Subsequent calls: ~0.025s (cached)
+
+---
+
+## 8. Future Roadmap
+
+See `HIERARCHICAL_PLANNER_ROADMAP.md` for detailed plans. Key upcoming features:
+
+### Path Flexibility Metrics
+
+Measure how robust a trajectory is:
+
+- **Empowerment**: How many future options remain available
+- **Returnability**: Probability of reaching safe states
+- **Outcome overlap**: Similarity of predicted futures between agents
+
+```
+F(π) = λ_E * Empowerment(π) + λ_R * Returnability(π) + λ_O * Overlap(π)
+```
+
+### Flexibility-Aware Policy Prior
+
+Bias agents toward flexible (robust) trajectories:
+
+```
+p(π) ∝ exp(κ * [F_i(π) + β * F_j(π)])
+```
+
+Combined objective:
+```
+J_i(π) = G_i + α*G_j - (κ/γ) * [F_i + β*F_j]
+```
+
+### Observation-Based Collision Inference
+
+Replace hard-coded collision penalties with learned beliefs:
+1. Track P(collision | zone_i, zone_j)
+2. Update beliefs based on observed collisions
+3. High-level planner uses inferred probabilities
 
 ---
 
 ## 9. Citation
 
-If you use this codebase or its ideas, please cite:
+If you use this codebase, please cite:
 
 ```bibtex
-@software{albarracin2025_pathflexibility,
-  title={Path Flexibility, Empathy, and Theory of Mind in Active Inference},
+@software{albarracin2025_empathic_tom,
+  title={Multi-Agent Theory of Mind with Empathy in Active Inference},
   author={Mahault Albarracin},
   year={2025},
   url={https://github.com/mahault/Alignment-experiments}
@@ -447,6 +433,6 @@ If you use this codebase or its ideas, please cite:
 
 ---
 
-## 10. Contact
+## Contact
 
 Issues & discussions: https://github.com/mahault/Alignment-experiments/issues

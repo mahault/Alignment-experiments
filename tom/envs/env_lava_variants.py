@@ -57,6 +57,40 @@ class LavaLayout:
             start_config="B"
         )
 
+    def swap_goals(self) -> "LavaLayout":
+        """Return a new layout with goals swapped but positions unchanged (config C).
+
+        This creates a scenario where agents keep their starting positions but
+        have each other's goals. Useful for testing when agents need to coordinate
+        through shared space.
+        """
+        return LavaLayout(
+            width=self.width,
+            height=self.height,
+            safe_cells=self.safe_cells.copy(),
+            goal_positions=[self.goal_positions[1], self.goal_positions[0]],
+            start_positions=self.start_positions.copy(),  # Positions unchanged
+            name=self.name,
+            start_config="C"
+        )
+
+    def swap_agents_and_goals(self) -> "LavaLayout":
+        """Return a new layout with both agents and goals swapped (config D).
+
+        This is equivalent to swap_agents().swap_goals() - agents swap positions
+        AND goals are swapped, which means each agent still wants to reach the
+        position of the other agent.
+        """
+        return LavaLayout(
+            width=self.width,
+            height=self.height,
+            safe_cells=self.safe_cells.copy(),
+            goal_positions=self.goal_positions.copy(),  # Original goals (since both swaps cancel out)
+            start_positions=[self.start_positions[1], self.start_positions[0]],
+            name=self.name,
+            start_config="D"
+        )
+
 
 def create_narrow_corridor(width: int = 6) -> LavaLayout:
     """
@@ -583,7 +617,11 @@ def get_layout(layout_name: str, start_config: str = "A", **kwargs) -> LavaLayou
         One of: "narrow", "wide", "bottleneck", "crossed_goals", "risk_reward",
         "double_bottleneck", "passing_bay", "asymmetric_detour", "t_junction"
     start_config : str
-        "A" for default configuration, "B" for swapped agent positions
+        Configuration variant:
+        - "A": Default configuration
+        - "B": Swapped agent positions (both positions and goals swapped)
+        - "C": Swapped goals only (same positions, but each agent wants other's goal)
+        - "D": Swapped agents but original goals (agents swap positions but keep original goals)
     **kwargs : dict
         Additional arguments for layout creation (e.g., width=8)
 
@@ -599,6 +637,10 @@ def get_layout(layout_name: str, start_config: str = "A", **kwargs) -> LavaLayou
 
     if start_config == "B":
         layout = layout.swap_agents()
+    elif start_config == "C":
+        layout = layout.swap_goals()
+    elif start_config == "D":
+        layout = layout.swap_agents_and_goals()
 
     return layout
 

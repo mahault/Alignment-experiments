@@ -576,6 +576,7 @@ def compute_empathic_G_jax(
     alpha: float,
     alpha_other: float,
     epistemic_scale: float = 1.0,
+    qs_other_predicted: np.ndarray = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     JAX-accelerated empathic EFE computation.
@@ -648,6 +649,10 @@ def compute_empathic_G_jax(
     B_i_jax = jnp.array(B_i)
     B_j_jax = jnp.array(B_j)
 
+    # For step 0, use predicted j position if provided (for ToM-based collision check)
+    # This is the key fix for simultaneous play
+    qs_j_step0_jax = jnp.array(qs_other_predicted) if qs_other_predicted is not None else qs_j_jax
+
     # Agent i A matrices and preferences
     A_i_loc_jax = jnp.array(A_i_loc)
     C_i_loc_jax = jnp.array(C_i_loc)
@@ -675,10 +680,12 @@ def compute_empathic_G_jax(
 
     # **VECTORIZED COMPUTATION OVER ALL POLICIES**
     # This is where the magic happens - single vmap replaces 125+ Python iterations!
+    # NOTE: We pass qs_j_step0_jax as the initial j belief for step 0 collision checking
+    # After step 0, j's belief is updated based on best response (handled in the rollout)
     G_i_jax, G_j_jax = rollout_all_policies_jax(
         policies_i_jax,
         qs_i_jax,
-        qs_j_jax,
+        qs_j_step0_jax,  # Use predicted j position for step 0 collision
         B_i_jax,
         A_i_loc_jax,
         C_i_loc_jax,
@@ -711,3 +718,244 @@ def compute_empathic_G_jax(
     G_social = np.array(G_social_jax)
 
     return G_i, G_j_best_response, G_social
+
+
+# =============================================================================
+# LEVEL 5: JAX-accelerated recursive Theory of Mind (from test_asymmetric_empathy.py)
+# =============================================================================
+# These functions port the working ToM logic to JAX for speed.
+
+TOM_DEPTH = 2  # Recursion depth for ToM
+TOM_HORIZON = 3  # Multi-step planning horizon for ToM
+
+
+@jax.jit
+def propagate_belief_tom_jax(
+    qs: jnp.ndarray,
+    qs_other: jnp.ndarray,
+    action: int,
+    B: jnp.ndarray,
+    eps: float = 1e-16,
+) -> jnp.ndarray:
+    """
+    JAX JIT version of propagate_belief from test_asymmetric_empathy.py.
+    Propagate belief state given an action.
+    """
+    # Handle 3D vs 4D B matrix (Python if is evaluated at trace time)
+    if B.ndim == 3:
+        # 3D: B[s', s, a] → simple matrix-vector product
+        qs_next = B[:, :, action] @ qs
+    elif B.ndim == 4:
+        # 4D: B[s', s, s_other, a] → marginalize over other's position
+        B_action = B[:, :, :, action]  # [s', s, s_other]
+        qs_next = jnp.einsum('ijk,j,k->i', B_action, qs, qs_other)
+    else:
+        raise ValueError(f"B must be 3D or 4D, got shape {B.shape}")
+
+    # Normalize
+    qs_next = qs_next / (qs_next.sum() + eps)
+    return qs_next
+
+
+def compute_G_empathic_multistep_jax(
+    qs_self: jnp.ndarray,
+    qs_other: jnp.ndarray,
+    alpha_self: float,
+    B_self: jnp.ndarray,
+    B_other: jnp.ndarray,
+    A_self_loc: jnp.ndarray,
+    C_self_loc: jnp.ndarray,
+    A_self_edge: jnp.ndarray,
+    C_self_edge: jnp.ndarray,
+    A_self_cell_collision: jnp.ndarray,
+    C_self_cell_collision: jnp.ndarray,
+    A_other_loc: jnp.ndarray,
+    C_other_loc: jnp.ndarray,
+    A_other_cell_collision: jnp.ndarray,
+    C_other_cell_collision: jnp.ndarray,
+    qs_other_predicted: jnp.ndarray = None,
+    horizon: int = TOM_HORIZON,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    JAX version of compute_G_empathic_multistep from test_asymmetric_empathy.py.
+    Computes G_self and G_social for each of the 5 first actions.
+    Uses greedy rollout for subsequent steps.
+    Returns: (G_self_all[5], G_social_all[5])
+    """
+    # Use predicted other position for step 0 if provided
+    qs_other_step0 = qs_other_predicted if qs_other_predicted is not None else qs_other
+
+    def compute_for_action(a0_self):
+        # Step 0: Self takes action a0_self
+        qs_self_1 = propagate_belief_tom_jax(qs_self, qs_other, a0_self, B_self)
+
+        # Self step 0 G (check collision against where other WILL BE)
+        obs_dist = A_self_loc @ qs_self_1
+        loc_utility = (obs_dist * C_self_loc).sum()
+        edge_dist = A_self_edge[:, :, a0_self] @ qs_self_1
+        edge_utility = (edge_dist * C_self_edge).sum()
+        cell_obs_dist = jnp.einsum('oij,i,j->o', A_self_cell_collision, qs_self_1, qs_other_step0)
+        cell_coll_utility = (cell_obs_dist * C_self_cell_collision).sum()
+        G_self_0 = -loc_utility - edge_utility - cell_coll_utility
+
+        # Other step 0: find best action for other
+        def compute_other_step_G(a):
+            qs_o_next = propagate_belief_tom_jax(qs_other, qs_self, a, B_other)
+            obs_d = A_other_loc @ qs_o_next
+            loc_u = (obs_d * C_other_loc).sum()
+            cell_d = jnp.einsum('oij,i,j->o', A_other_cell_collision, qs_o_next, qs_self)
+            cell_u = (cell_d * C_other_cell_collision).sum()
+            return -loc_u - cell_u
+
+        G_other_step0_all = vmap(compute_other_step_G)(jnp.arange(5))
+        best_G_other_0 = jnp.min(G_other_step0_all)
+
+        # Edge collision (swap) detection
+        prob_self_at_other_start = jnp.sum(qs_self_1 * qs_other)
+        prob_other_at_self_start = jnp.sum(qs_other_step0 * qs_self)
+        swap_prob = prob_self_at_other_start * prob_other_at_self_start
+        edge_obs_dist = jnp.array([1.0 - swap_prob, swap_prob])
+
+        edge_coll_utility_self = (edge_obs_dist * C_self_cell_collision).sum()
+        edge_coll_utility_other = (edge_obs_dist * C_other_cell_collision).sum()
+
+        total_G_self = G_self_0 - edge_coll_utility_self
+        total_G_other = best_G_other_0 - edge_coll_utility_other
+
+        # Greedy rollout for steps 1..horizon-1
+        def greedy_step(carry, _):
+            qs_s_t, qs_o_t, G_s, G_o = carry
+
+            def compute_self_step_G(a):
+                qs_s_next = propagate_belief_tom_jax(qs_s_t, qs_o_t, a, B_self)
+                obs_d = A_self_loc @ qs_s_next
+                loc_u = (obs_d * C_self_loc).sum()
+                edge_d = A_self_edge[:, :, a] @ qs_s_next
+                edge_u = (edge_d * C_self_edge).sum()
+                cell_d = jnp.einsum('oij,i,j->o', A_self_cell_collision, qs_s_next, qs_o_t)
+                cell_u = (cell_d * C_self_cell_collision).sum()
+                return -loc_u - edge_u - cell_u
+
+            G_self_all = vmap(compute_self_step_G)(jnp.arange(5))
+            best_self_idx = jnp.argmin(G_self_all)
+            best_G_self = G_self_all[best_self_idx]
+            qs_s_next = propagate_belief_tom_jax(qs_s_t, qs_o_t, best_self_idx, B_self)
+
+            def compute_other_greedy_G(a):
+                qs_o_next = propagate_belief_tom_jax(qs_o_t, qs_s_t, a, B_other)
+                obs_d = A_other_loc @ qs_o_next
+                loc_u = (obs_d * C_other_loc).sum()
+                cell_d = jnp.einsum('oij,i,j->o', A_other_cell_collision, qs_o_next, qs_s_t)
+                cell_u = (cell_d * C_other_cell_collision).sum()
+                return -loc_u - cell_u
+
+            G_other_all = vmap(compute_other_greedy_G)(jnp.arange(5))
+            best_other_idx = jnp.argmin(G_other_all)
+            best_G_other = G_other_all[best_other_idx]
+            qs_o_next = propagate_belief_tom_jax(qs_o_t, qs_s_t, best_other_idx, B_other)
+
+            return (qs_s_next, qs_o_next, G_s + best_G_self, G_o + best_G_other), None
+
+        init_carry = (qs_self_1, qs_other_step0, total_G_self, total_G_other)
+        (_, _, final_G_self, final_G_other), _ = lax.scan(greedy_step, init_carry, None, length=horizon-1)
+
+        G_social = final_G_self + alpha_self * final_G_other
+        return final_G_self, G_social
+
+    G_self_all, G_social_all = vmap(compute_for_action)(jnp.arange(5))
+    return G_self_all, G_social_all
+
+
+_compute_G_empathic_multistep_jax_jit = jax.jit(compute_G_empathic_multistep_jax, static_argnums=(16,))
+
+
+def predict_other_action_recursive_jax(
+    qs_other: np.ndarray,
+    qs_self: np.ndarray,
+    alpha_other: float,
+    alpha_self: float,
+    B_other: np.ndarray,
+    B_self: np.ndarray,
+    A_other_loc: np.ndarray,
+    C_other_loc: np.ndarray,
+    A_other_edge: np.ndarray,
+    C_other_edge: np.ndarray,
+    A_other_cell_collision: np.ndarray,
+    C_other_cell_collision: np.ndarray,
+    A_self_loc: np.ndarray,
+    C_self_loc: np.ndarray,
+    A_self_edge: np.ndarray,
+    C_self_edge: np.ndarray,
+    A_self_cell_collision: np.ndarray,
+    C_self_cell_collision: np.ndarray,
+    depth: int = TOM_DEPTH,
+    horizon: int = TOM_HORIZON,
+) -> Tuple[int, np.ndarray]:
+    """
+    JAX-accelerated recursive ToM prediction (from test_asymmetric_empathy.py).
+    depth=0: Base case, assume opponent stays in place
+    depth=1: Predict opponent assuming they use depth=0
+    depth=2: Predict opponent assuming they use depth=1
+    Returns: (predicted_action, G_social_array[5])
+    """
+    qs_other_jax = jnp.array(qs_other)
+    qs_self_jax = jnp.array(qs_self)
+    B_other_jax = jnp.array(B_other)
+    B_self_jax = jnp.array(B_self)
+    A_other_loc_jax = jnp.array(A_other_loc)
+    C_other_loc_jax = jnp.array(C_other_loc)
+    A_other_edge_jax = jnp.array(A_other_edge)
+    C_other_edge_jax = jnp.array(C_other_edge)
+    A_other_cell_collision_jax = jnp.array(A_other_cell_collision)
+    C_other_cell_collision_jax = jnp.array(C_other_cell_collision)
+    A_self_loc_jax = jnp.array(A_self_loc)
+    C_self_loc_jax = jnp.array(C_self_loc)
+    A_self_edge_jax = jnp.array(A_self_edge)
+    C_self_edge_jax = jnp.array(C_self_edge)
+    A_self_cell_collision_jax = jnp.array(A_self_cell_collision)
+    C_self_cell_collision_jax = jnp.array(C_self_cell_collision)
+
+    if depth == 0:
+        _, G_social = _compute_G_empathic_multistep_jax_jit(
+            qs_other_jax, qs_self_jax, alpha_other,
+            B_other_jax, B_self_jax,
+            A_other_loc_jax, C_other_loc_jax,
+            A_other_edge_jax, C_other_edge_jax,
+            A_other_cell_collision_jax, C_other_cell_collision_jax,
+            A_self_loc_jax, C_self_loc_jax,
+            A_self_cell_collision_jax, C_self_cell_collision_jax,
+            None, horizon,
+        )
+        G_social_np = np.array(G_social)
+        return int(np.argmin(G_social_np)), G_social_np
+
+    our_predicted_action, _ = predict_other_action_recursive_jax(
+        qs_self, qs_other,
+        alpha_self, alpha_other,
+        B_self, B_other,
+        A_self_loc, C_self_loc,
+        A_self_edge, C_self_edge,
+        A_self_cell_collision, C_self_cell_collision,
+        A_other_loc, C_other_loc,
+        A_other_edge, C_other_edge,
+        A_other_cell_collision, C_other_cell_collision,
+        depth=depth - 1, horizon=horizon,
+    )
+
+    qs_self_predicted = np.array(propagate_belief_tom_jax(
+        qs_self_jax, qs_other_jax, our_predicted_action, B_self_jax
+    ))
+
+    _, G_social = _compute_G_empathic_multistep_jax_jit(
+        qs_other_jax, qs_self_jax, alpha_other,
+        B_other_jax, B_self_jax,
+        A_other_loc_jax, C_other_loc_jax,
+        A_other_edge_jax, C_other_edge_jax,
+        A_other_cell_collision_jax, C_other_cell_collision_jax,
+        A_self_loc_jax, C_self_loc_jax,
+        A_self_cell_collision_jax, C_self_cell_collision_jax,
+        jnp.array(qs_self_predicted), horizon,
+    )
+
+    G_social_np = np.array(G_social)
+    return int(np.argmin(G_social_np)), G_social_np

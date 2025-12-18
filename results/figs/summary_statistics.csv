@@ -1,2 +1,12 @@
 layout,Success (mean),Success (std),Paralysis,Collision,Avg Steps
+asymmetric_detour,0.0,0.0,0.333,0.667,10.333
+bottleneck,1.0,0.0,0.0,0.0,10.0
+crossed_goals,0.0,0.0,0.0,1.0,6.0
+double_bottleneck,0.0,0.0,0.0,0.0,10.0
+narrow,0.0,0.0,1.0,0.0,15.0
+passing_bay,0.0,0.0,0.333,0.667,7.667
+risk_reward,0.0,0.0,1.0,0.0,15.0
+symmetric_bottleneck,0.0,0.0,1.0,0.0,15.0
+t_junction,0.0,0.0,0.0,1.0,2.0
 vertical_bottleneck,0.0,0.0,0.667,0.333,11.0
+wide,1.0,0.0,0.0,0.0,5.0

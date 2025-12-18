@@ -22,6 +22,9 @@ from dataclasses import dataclass
 from tom.models import LavaAgent
 from tom.planning.si_lava import compute_full_G
 
+# Recursive ToM depth - how many levels of "I think you think I think..."
+TOM_DEPTH = 2
+
 
 def compute_other_agent_G(
     qs_j: np.ndarray,
@@ -268,6 +271,137 @@ def _expected_pragmatic_utility(
     return float(total)
 
 
+def predict_other_action_recursive(
+    qs_other: np.ndarray,
+    qs_self: np.ndarray,
+    B_other: np.ndarray,
+    B_self: np.ndarray,
+    A_other_loc: np.ndarray,
+    C_other_loc: np.ndarray,
+    A_other_edge: np.ndarray,
+    C_other_edge: np.ndarray,
+    A_other_cell_collision: np.ndarray,
+    C_other_cell_collision: np.ndarray,
+    A_other_edge_collision: np.ndarray,
+    C_other_edge_collision: np.ndarray,
+    A_self_loc: np.ndarray,
+    C_self_loc: np.ndarray,
+    A_self_edge: np.ndarray,
+    C_self_edge: np.ndarray,
+    A_self_cell_collision: np.ndarray,
+    C_self_cell_collision: np.ndarray,
+    A_self_edge_collision: np.ndarray,
+    C_self_edge_collision: np.ndarray,
+    policies_other: np.ndarray,
+    policies_self: np.ndarray,
+    alpha_other: float,
+    alpha_self: float,
+    depth: int = TOM_DEPTH,
+    epistemic_scale: float = 1.0,
+) -> Tuple[int, np.ndarray]:
+    """
+    Predict what the other agent will do using recursive ToM.
+
+    BOTH agents are IDENTICAL except for alpha:
+    1. Predict other's action (using ToM)
+    2. Use other's predicted position for collision
+    3. Compute G_social = G_self + alpha * G_other
+    4. Choose action minimizing G_social
+
+    depth=0: Base case, assume opponent stays in place
+    depth=1: Predict opponent assuming they use depth=0
+    depth=2: Predict opponent assuming they use depth=1
+
+    Parameters
+    ----------
+    qs_other : np.ndarray
+        Other agent's current belief state
+    qs_self : np.ndarray
+        Self's current belief state
+    B_other, B_self : np.ndarray
+        Transition models
+    A_*_loc, C_*_loc, etc : np.ndarray
+        Observation models and preferences for both agents
+    policies_other, policies_self : np.ndarray
+        Policy sets for both agents
+    alpha_other : float
+        Other agent's empathy level
+    alpha_self : float
+        Self's empathy level
+    depth : int
+        Recursion depth for ToM reasoning
+    epistemic_scale : float
+        Weight on epistemic term
+
+    Returns
+    -------
+    action : int
+        Predicted action for other agent
+    G_social : np.ndarray
+        Other agent's G_social values for each action
+    """
+    if depth == 0:
+        # Base case: assume opponent (self) stays in place
+        # Other computes their G_social with us at current position
+        G_other, G_self_sim, G_social = compute_empathic_G(
+            qs_other, B_other,
+            A_other_loc, C_other_loc, A_other_edge, C_other_edge,
+            A_other_cell_collision, C_other_cell_collision,
+            A_other_edge_collision, C_other_edge_collision,
+            policies_other,
+            qs_self, B_self,
+            A_self_loc, C_self_loc, A_self_edge, C_self_edge,
+            A_self_cell_collision, C_self_cell_collision,
+            A_self_edge_collision, C_self_edge_collision,
+            policies_self,
+            alpha_other, alpha_self,
+            epistemic_scale=epistemic_scale,
+            qs_other_predicted=None,  # Self stays in place
+        )
+        best_action = int(np.argmin(G_social))
+        return best_action, G_social
+
+    # Recursive case: predict what other predicts we'll do
+    # Other uses depth-1 to predict us
+    our_predicted_action, _ = predict_other_action_recursive(
+        qs_self, qs_other,  # Swapped: from other's perspective, we are "other"
+        B_self, B_other,
+        A_self_loc, C_self_loc, A_self_edge, C_self_edge,
+        A_self_cell_collision, C_self_cell_collision,
+        A_self_edge_collision, C_self_edge_collision,
+        A_other_loc, C_other_loc, A_other_edge, C_other_edge,
+        A_other_cell_collision, C_other_cell_collision,
+        A_other_edge_collision, C_other_edge_collision,
+        policies_self, policies_other,
+        alpha_self, alpha_other,  # Swapped
+        depth=depth - 1,
+        epistemic_scale=epistemic_scale,
+    )
+
+    # Compute our predicted position after taking predicted action
+    qs_self_predicted = _propagate_belief(qs_self, B_self, our_predicted_action, qs_other=qs_other)
+
+    # Other computes their G_social using our predicted position
+    G_other, G_self_sim, G_social = compute_empathic_G(
+        qs_other, B_other,
+        A_other_loc, C_other_loc, A_other_edge, C_other_edge,
+        A_other_cell_collision, C_other_cell_collision,
+        A_other_edge_collision, C_other_edge_collision,
+        policies_other,
+        qs_self, B_self,
+        A_self_loc, C_self_loc, A_self_edge, C_self_edge,
+        A_self_cell_collision, C_self_cell_collision,
+        A_self_edge_collision, C_self_edge_collision,
+        policies_self,
+        alpha_other, alpha_self,
+        epistemic_scale=epistemic_scale,
+        qs_other_predicted=qs_self_predicted,  # Use our predicted position
+    )
+
+    best_action = int(np.argmin(G_social))
+    return best_action, G_social
+
+
 def compute_empathic_G(
     qs_i: np.ndarray,
     B_i: np.ndarray,
@@ -294,6 +428,7 @@ def compute_empathic_G(
     alpha: float,
     alpha_other: float,
     epistemic_scale: float = 1.0,
+    qs_other_predicted: np.ndarray = None,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute empathy-weighted EFE for agent i.
@@ -301,7 +436,7 @@ def compute_empathic_G(
     For each candidate policy π_i:
 
         Initialise beliefs:
-            q_i^0 = qs_i, q_j^0 = qs_j
+            q_i^0 = qs_i, q_j^0 = qs_j (or qs_other_predicted for step 0)
 
         For t = 0..H-1:
             1. i takes action a_i^t (from π_i):
@@ -357,6 +492,10 @@ def compute_empathic_G(
         Empathy weight ∈ [0, 1]
     epistemic_scale : float
         Weight on epistemic value term
+    qs_other_predicted : np.ndarray, optional
+        If provided, use this as j's predicted position for step 0 collision checking.
+        This enables using ToM prediction: if we predict j will move, check collision
+        against their PREDICTED position, not current position.
 
     Returns
     -------
@@ -381,6 +520,9 @@ def compute_empathic_G(
     C_j_cell_collision_scaled = C_j_cell_collision * collision_scale
     C_j_edge_collision_scaled = C_j_edge_collision * collision_scale
 
+    # For step 0, use predicted j position if provided (for ToM-based collision check)
+    qs_j_step0 = qs_other_predicted if qs_other_predicted is not None else qs_j
+
     for i_policy_idx, policy_i in enumerate(policies_i):
         action_seq_i = policy_i[:, 0].astype(int)  # (horizon,)
         horizon = len(action_seq_i)
@@ -395,6 +537,11 @@ def compute_empathic_G(
         for t in range(horizon):
             a_i_t = int(action_seq_i[t])
 
+            # For step 0, use predicted j position for collision checking
+            # This is the key fix: in simultaneous play, check collision against
+            # where j WILL BE (predicted), not where j currently is
+            qs_j_for_collision = qs_j_step0 if t == 0 else qs_j_t
+
             # --- i's action and belief propagation ---
             qs_i_next = _propagate_belief(qs_i_t, B_i, a_i_t, qs_other=qs_j_t)
 
@@ -405,7 +552,7 @@ def compute_empathic_G(
                 qs_self_current=qs_i_t,
                 qs_other_current=qs_j_t,
                 qs_self_next=qs_i_next,
-                qs_other_next=qs_j_t,  # j hasn't moved yet, so next = current
+                qs_other_next=qs_j_for_collision,  # Use predicted position for step 0
                 action_self=a_i_t,
                 action_other=4,  # Dummy - edge collision computed separately below
                 A_loc=A_i_loc,
@@ -645,7 +792,57 @@ class EmpathicLavaPlanner:
         C_j_edge_collision = np.asarray(self.agent_j.C["edge_collision_obs"])
         policies_j = np.asarray(self.agent_j.policies)
 
+        # === RECURSIVE ToM: Predict j's action before computing EFE ===
+        # This enables checking collision against j's PREDICTED position, not current position
+        if self.use_jax:
+            try:
+                from tom.planning.jax_si_empathy_lava import predict_other_action_recursive_jax, TOM_DEPTH as JAX_TOM_DEPTH, TOM_HORIZON
+
+                # Use JAX-accelerated ToM prediction (much faster!)
+                predicted_j_action, _ = predict_other_action_recursive_jax(
+                    qs_j, qs_i,  # From j's perspective: j is "self", i is "other"
+                    self.alpha_other, self.alpha,  # j's alpha, our alpha
+                    B_j, B_i,
+                    A_j_loc, C_j_loc, A_j_edge, C_j_edge,
+                    A_j_cell_collision, C_j_cell_collision,
+                    A_i_loc, C_i_loc, A_i_edge, C_i_edge,
+                    A_i_cell_collision, C_i_cell_collision,
+                    depth=JAX_TOM_DEPTH,
+                    horizon=TOM_HORIZON,
+                )
+            except ImportError:
+                # Fall back to NumPy if JAX not available
+                predicted_j_action, _ = predict_other_action_recursive(
+                    qs_j, qs_i, B_j, B_i,
+                    A_j_loc, C_j_loc, A_j_edge, C_j_edge,
+                    A_j_cell_collision, C_j_cell_collision,
+                    A_j_edge_collision, C_j_edge_collision,
+                    A_i_loc, C_i_loc, A_i_edge, C_i_edge,
+                    A_i_cell_collision, C_i_cell_collision,
+                    A_i_edge_collision, C_i_edge_collision,
+                    policies_j, policies_i,
+                    self.alpha_other, self.alpha,
+                    depth=TOM_DEPTH, epistemic_scale=self.epistemic_scale,
+                )
+        else:
+            predicted_j_action, _ = predict_other_action_recursive(
+                qs_j, qs_i, B_j, B_i,
+                A_j_loc, C_j_loc, A_j_edge, C_j_edge,
+                A_j_cell_collision, C_j_cell_collision,
+                A_j_edge_collision, C_j_edge_collision,
+                A_i_loc, C_i_loc, A_i_edge, C_i_edge,
+                A_i_cell_collision, C_i_cell_collision,
+                A_i_edge_collision, C_i_edge_collision,
+                policies_j, policies_i,
+                self.alpha_other, self.alpha,
+                depth=TOM_DEPTH, epistemic_scale=self.epistemic_scale,
+            )
+
+        # Compute j's predicted position after taking predicted action
+        qs_j_predicted = _propagate_belief(qs_j, B_j, predicted_j_action, qs_other=qs_i)
+
         # Compute empathic EFE (dispatch to JAX or NumPy)
+        # Pass qs_j_predicted for step 0 collision checking (simultaneous play)
         if self.use_jax:
             try:
                 from tom.planning.jax_si_empathy_lava import compute_empathic_G_jax
@@ -665,6 +862,7 @@ class EmpathicLavaPlanner:
                     self.alpha,
                     self.alpha_other,  # Observed empathy of other agent
                     epistemic_scale=self.epistemic_scale,
+                    qs_other_predicted=qs_j_predicted,  # Use predicted j position for step 0
                 )
             except ImportError as e:
                 # Fall back to NumPy if JAX not available
@@ -688,6 +886,7 @@ class EmpathicLavaPlanner:
                     self.alpha,
                     self.alpha_other,  # Observed empathy of other agent
                     epistemic_scale=self.epistemic_scale,
+                    qs_other_predicted=qs_j_predicted,  # Use predicted j position for step 0
                 )
         else:
             # Use NumPy version explicitly
@@ -705,6 +904,7 @@ class EmpathicLavaPlanner:
                 self.alpha,
                 self.alpha_other,  # Observed empathy of other agent
                 epistemic_scale=self.epistemic_scale,
+                qs_other_predicted=qs_j_predicted,  # Use predicted j position for step 0
             )
 
         # Compute policy posterior: q(π) ∝ exp(-γ * G_social)

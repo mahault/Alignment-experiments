@@ -19,12 +19,163 @@ from tom.envs.env_lava_variants import get_layout
 from tom.models.model_lava import LavaModel, LavaAgent
 
 ACTION_NAMES = ["UP", "DOWN", "LEFT", "RIGHT", "STAY"]
+ACTION_DELTAS = {"UP": (0, -1), "DOWN": (0, 1), "LEFT": (-1, 0), "RIGHT": (1, 0), "STAY": (0, 0)}
 POLICY_LENGTH = 3  # Multi-step horizon
 
 # Tunable parameters for finding the sweet spot
 # We want: selfish agent moves (collision < goal benefit for self)
 #          empathic agent yields (2*collision > goal benefit for self)
 COLLISION_PENALTY = -100.0  # Override model's default (-30)
+# Edge collision (swap) uses the same C as cell collision
+
+
+def render_grid(width, height, safe_cells, pos_i, pos_j, goal_i, goal_j,
+                action_i=None, action_j=None, alpha_i=None, alpha_j=None):
+    """
+    Render the grid showing agent positions, goals, and movements.
+
+    Legend:
+    - i/I: Agent i (lowercase=selfish, UPPERCASE=empathic)
+    - j/J: Agent j (lowercase=selfish, UPPERCASE=empathic)
+    - Gi/Gj: Goals
+    - .: Safe cell
+    - #: Lava/wall
+    - Arrows show movement direction
+    """
+    # Compute next positions
+    next_i = pos_i
+    next_j = pos_j
+    if action_i is not None:
+        dx, dy = ACTION_DELTAS[ACTION_NAMES[action_i]]
+        next_i = (pos_i[0] + dx, pos_i[1] + dy)
+    if action_j is not None:
+        dx, dy = ACTION_DELTAS[ACTION_NAMES[action_j]]
+        next_j = (pos_j[0] + dx, pos_j[1] + dy)
+
+    # Agent symbols based on empathy
+    sym_i = "I" if alpha_i and alpha_i > 0 else "i"
+    sym_j = "J" if alpha_j and alpha_j > 0 else "j"
+
+    lines = []
+    lines.append("  " + "".join([f" {x} " for x in range(width)]))
+
+    for y in range(height):
+        row = f"{y} "
+        for x in range(width):
+            pos = (x, y)
+            cell = " . "
+
+            # Check if lava
+            if pos not in safe_cells:
+                cell = " # "
+
+            # Goals (background)
+            if pos == goal_i and pos == goal_j:
+                cell = "GiJ"
+            elif pos == goal_i:
+                cell = "Gi "
+            elif pos == goal_j:
+                cell = " Gj"
+
+            # Current positions (overwrite)
+            if pos == pos_i and pos == pos_j:
+                cell = f"[{sym_i}{sym_j}]"[:3]
+            elif pos == pos_i:
+                cell = f"[{sym_i}]"
+            elif pos == pos_j:
+                cell = f"[{sym_j}]"
+
+            # Next positions (show as destination)
+            if action_i is not None or action_j is not None:
+                if pos == next_i and pos == next_j and pos != pos_i and pos != pos_j:
+                    cell = f">{sym_i}{sym_j}<"[:3]
+                elif pos == next_i and pos != pos_i:
+                    cell = f">{sym_i}<"[:3]
+                elif pos == next_j and pos != pos_j:
+                    cell = f">{sym_j}<"[:3]
+
+            row += cell
+        lines.append(row)
+
+    return "\n".join(lines)
+
+
+def show_movement_diagram(layout, pos_i, pos_j, goal_i, goal_j,
+                          action_i, action_j, alpha_i, alpha_j, case_name,
+                          pred_i_of_j=None, pred_j_of_i=None):
+    """Show a visual diagram of the movement."""
+    print(f"\n{'-' * 60}")
+    print(f"GRID VISUALIZATION: {case_name}")
+    print(f"{'-' * 60}")
+
+    # Agent info
+    emp_i = "EMPATHIC" if alpha_i > 0 else "SELFISH"
+    emp_j = "EMPATHIC" if alpha_j > 0 else "SELFISH"
+    print(f"\n  AGENTS:")
+    print(f"    i: {emp_i} (alpha={alpha_i}), goal at {goal_i}")
+    print(f"    j: {emp_j} (alpha={alpha_j}), goal at {goal_j}")
+
+    # Predictions
+    print(f"\n  PREDICTIONS:")
+    if pred_i_of_j is not None:
+        pred_i_correct = pred_i_of_j == action_j
+        mark_i = "OK" if pred_i_correct else "WRONG"
+        print(f"    i predicts j will: {ACTION_NAMES[pred_i_of_j]:5} (actual: {ACTION_NAMES[action_j]}) [{mark_i}]")
+    if pred_j_of_i is not None:
+        pred_j_correct = pred_j_of_i == action_i
+        mark_j = "OK" if pred_j_correct else "WRONG"
+        print(f"    j predicts i will: {ACTION_NAMES[pred_j_of_i]:5} (actual: {ACTION_NAMES[action_i]}) [{mark_j}]")
+
+    # Actions
+    print(f"\n  ACTIONS:")
+    print(f"    i chooses: {ACTION_NAMES[action_i]}")
+    print(f"    j chooses: {ACTION_NAMES[action_j]}")
+
+    # Compute outcomes
+    dx_i, dy_i = ACTION_DELTAS[ACTION_NAMES[action_i]]
+    dx_j, dy_j = ACTION_DELTAS[ACTION_NAMES[action_j]]
+    next_i = (pos_i[0] + dx_i, pos_i[1] + dy_i)
+    next_j = (pos_j[0] + dx_j, pos_j[1] + dy_j)
+
+    collision = next_i == next_j
+    i_toward_goal = (next_i[0] - pos_i[0]) * (goal_i[0] - pos_i[0]) > 0 or \
+                    (next_i[1] - pos_i[1]) * (goal_i[1] - pos_i[1]) > 0
+    j_toward_goal = (next_j[0] - pos_j[0]) * (goal_j[0] - pos_j[0]) > 0 or \
+                    (next_j[1] - pos_j[1]) * (goal_j[1] - pos_j[1]) > 0
+
+    i_yields = ACTION_NAMES[action_i] == "STAY" or not i_toward_goal
+    j_yields = ACTION_NAMES[action_j] == "STAY" or not j_toward_goal
+
+    print(f"\n  Before: i at {pos_i}, j at {pos_j}")
+    print(f"  After:  i at {next_i}, j at {next_j}")
+
+    if collision:
+        print("  Outcome: COLLISION!")
+    elif i_yields and not j_yields:
+        print("  Outcome: i YIELDS, j ADVANCES -> Coordination!")
+    elif j_yields and not i_yields:
+        print("  Outcome: j YIELDS, i ADVANCES -> Coordination!")
+    elif i_yields and j_yields:
+        print("  Outcome: Both YIELD -> Paralysis")
+    else:
+        print("  Outcome: Both ADVANCE (may or may not collide)")
+
+    # Grid
+    print("\n  Grid (before -> after):")
+    safe_cells = set(layout.safe_cells)
+    grid_before = render_grid(layout.width, layout.height, safe_cells,
+                              pos_i, pos_j, goal_i, goal_j,
+                              alpha_i=alpha_i, alpha_j=alpha_j)
+    grid_after = render_grid(layout.width, layout.height, safe_cells,
+                             next_i, next_j, goal_i, goal_j,
+                             alpha_i=alpha_i, alpha_j=alpha_j)
+
+    # Print side by side
+    before_lines = grid_before.split("\n")
+    after_lines = grid_after.split("\n")
+    print("\n  BEFORE:                    AFTER:")
+    for b, a in zip(before_lines, after_lines):
+        print(f"  {b}        {a}")
 
 
 def propagate_belief(model, qs, qs_other, action):
@@ -167,45 +318,68 @@ def compute_G_multistep(model, qs_self, qs_other, horizon=POLICY_LENGTH, collisi
     return np.array(G_first_actions)
 
 
-def predict_other_action(model_other, model_self, qs_other, qs_self, alpha_other,
-                         use_multistep=True, collision_penalty=None):
+def predict_other_action_recursive(model_other, model_self, qs_other, qs_self,
+                                    alpha_other, alpha_self, depth=1,
+                                    collision_penalty=None):
     """
-    Predict what the other agent will do.
-    If alpha_other=0: other just minimizes their own G (selfish)
-    If alpha_other>0: other uses empathy, so we simulate their empathic planning
-    """
-    if alpha_other == 0:
-        # Other is selfish, just minimizes own G
-        if use_multistep:
-            G_other = compute_G_multistep(model_other, qs_other, qs_self,
-                                          collision_penalty=collision_penalty)
-        else:
-            G_other = compute_G_independent(model_other, qs_other, qs_self,
-                                            collision_penalty=collision_penalty)
-        return int(np.argmin(G_other)), G_other
-    else:
-        # Other is empathic! They will predict WE are selfish (level-1 reasoning)
-        # and plan empathically
-        if use_multistep:
-            G_self_independent = compute_G_multistep(model_self, qs_self, qs_other,
-                                                     collision_penalty=collision_penalty)
-        else:
-            G_self_independent = compute_G_independent(model_self, qs_self, qs_other,
-                                                       collision_penalty=collision_penalty)
-        my_predicted_action = int(np.argmin(G_self_independent))
+    Predict what the other agent will do using recursive ToM.
 
-        # Now compute other's empathic G_social
-        if use_multistep:
-            G_other_self, G_other_social = compute_G_empathic_multistep(
-                model_other, model_self, qs_other, qs_self, alpha_other,
-                collision_penalty=collision_penalty
-            )
-        else:
-            G_other_self, G_other_social = compute_G_empathic_given_action(
-                model_other, model_self, qs_other, qs_self,
-                my_predicted_action, alpha_other
-            )
+    BOTH agents are IDENTICAL except for alpha:
+    1. Predict other's action (using ToM)
+    2. Use other's predicted position for collision
+    3. Compute G_social = G_self + alpha * G_other
+    4. Choose action minimizing G_social
+
+    depth=0: Base case, assume opponent stays in place
+    depth=1: Predict opponent assuming they use depth=0
+    depth=2: Predict opponent assuming they use depth=1
+    etc.
+    """
+    if depth == 0:
+        # Base case: assume opponent (self) stays in place
+        # Other computes their G_social with us at current position
+        G_other_self, G_other_social = compute_G_empathic_multistep(
+            model_other, model_self, qs_other, qs_self, alpha_other,
+            collision_penalty=collision_penalty,
+            qs_other_predicted=None  # We stay in place
+        )
         return int(np.argmin(G_other_social)), G_other_social
+
+    # Recursive case: predict what other predicts we'll do
+    # Other uses depth-1 to predict us
+    our_predicted_action, _ = predict_other_action_recursive(
+        model_self, model_other, qs_self, qs_other,
+        alpha_self, alpha_other, depth=depth-1,
+        collision_penalty=collision_penalty
+    )
+
+    # Compute our predicted position
+    qs_self_predicted = propagate_belief(model_self, qs_self, qs_other, our_predicted_action)
+
+    # Other computes their G_social using our predicted position
+    G_other_self, G_other_social = compute_G_empathic_multistep(
+        model_other, model_self, qs_other, qs_self, alpha_other,
+        collision_penalty=collision_penalty,
+        qs_other_predicted=qs_self_predicted
+    )
+
+    return int(np.argmin(G_other_social)), G_other_social
+
+
+TOM_DEPTH = 2  # Depth of recursive ToM reasoning
+
+
+def predict_other_action(model_other, model_self, qs_other, qs_self, alpha_other,
+                         alpha_self=0.0, use_multistep=True, collision_penalty=None):
+    """
+    Wrapper for recursive ToM prediction.
+    Uses TOM_DEPTH for recursion depth.
+    """
+    return predict_other_action_recursive(
+        model_other, model_self, qs_other, qs_self,
+        alpha_other, alpha_self, depth=TOM_DEPTH,
+        collision_penalty=collision_penalty
+    )
 
 
 def compute_G_empathic_given_action(model_self, model_other, qs_self, qs_other,
@@ -304,6 +478,7 @@ def compute_G_empathic_multistep(model_self, model_other, qs_self, qs_other,
     Key insight: If self yields at t=0, other can move at t=1, improving other's multi-step G.
 
     qs_other_predicted: If provided, use this as the other's position after step 0.
+    Edge collision (swap) uses the same C as cell collision.
     """
     # Use predicted other position for step 0 if provided
     qs_other_step0 = qs_other_predicted if qs_other_predicted is not None else qs_other
@@ -393,8 +568,30 @@ def compute_G_empathic_multistep(model_self, model_other, qs_self, qs_other,
         )
         qs_other_1 = qs_other_step0  # Other ends up at predicted position
 
-        total_G_self = G_self_0
-        total_G_other = best_G_other_0
+        # === EDGE COLLISION (SWAP) DETECTION ===
+        # Swap occurs when: self moves to other's current pos AND other moves to self's current pos
+        # This is an edge collision - both agents try to pass through each other
+        #
+        # Edge collision uses the SAME C as cell collision (both are collisions)
+        # Pattern: obs_dist × C, then subtract from utility (same as cell collision)
+        edge_coll_utility_self = 0.0
+        edge_coll_utility_other = 0.0
+
+        # Check swap: self ends up at other's start, other ends up at self's start
+        prob_self_at_other_start = np.sum(qs_self_1 * qs_other)
+        prob_other_at_self_start = np.sum(qs_other_step0 * qs_self)
+        swap_prob = prob_self_at_other_start * prob_other_at_self_start
+
+        # Edge collision observation distribution: [P(no_swap), P(swap)]
+        edge_obs_dist = np.array([1 - swap_prob, swap_prob])
+
+        # Use same C as cell collision - both agents experience the collision
+        edge_coll_utility_self = float((edge_obs_dist * C_self_cell_collision).sum())
+        edge_coll_utility_other = float((edge_obs_dist * C_other_cell_collision).sum())
+
+        # Subtract utility (same pattern as cell collision in compute_step_G)
+        total_G_self = G_self_0 - edge_coll_utility_self
+        total_G_other = best_G_other_0 - edge_coll_utility_other
 
         qs_self_t = qs_self_1
         qs_other_t = qs_other_1
@@ -427,7 +624,7 @@ def plan_with_empathy(model_self, model_other, qs_self, qs_other,
     """Plan using corrected ToM with empathy.
 
     If use_multistep=True, uses multi-step planning (horizon=POLICY_LENGTH).
-    collision_penalty: Override the model's default collision penalty.
+    collision_penalty: Override the model's default collision penalty (also used for edge collision).
 
     KEY FIX: After predicting other's action, we compute their PREDICTED position
     and use that for collision checking. This allows the agent to see that if
@@ -435,30 +632,21 @@ def plan_with_empathy(model_self, model_other, qs_self, qs_other,
     """
     action_other_predicted, G_other = predict_other_action(
         model_other, model_self, qs_other, qs_self, alpha_other,
+        alpha_self=alpha_self,  # Other knows our empathy level
         collision_penalty=collision_penalty
     )
 
-    # KEY FIX: Compute other's predicted position after taking their predicted action
-    # This is where they WILL BE, not where they currently ARE
+    # Compute other's predicted position after taking their predicted action
     qs_other_predicted = propagate_belief(model_other, qs_other, qs_self, action_other_predicted)
 
+    # BOTH agents use the SAME planning mechanism
+    # Only difference is alpha: G_social = G_self + alpha * G_other
     if use_multistep:
-        # For selfish agents (alpha=0), we still need to use ToM prediction for collision
-        if alpha_self == 0:
-            # Selfish: just minimize own G, but use predicted other position
-            G_self = compute_G_multistep(
-                model_self, qs_self, qs_other,
-                collision_penalty=collision_penalty,
-                qs_other_predicted=qs_other_predicted
-            )
-            G_social = G_self
-        else:
-            # Empathic: use full empathic computation with predicted other position
-            G_self, G_social = compute_G_empathic_multistep(
-                model_self, model_other, qs_self, qs_other, alpha_self,
-                collision_penalty=collision_penalty,
-                qs_other_predicted=qs_other_predicted
-            )
+        G_self, G_social = compute_G_empathic_multistep(
+            model_self, model_other, qs_self, qs_other, alpha_self,
+            collision_penalty=collision_penalty,
+            qs_other_predicted=qs_other_predicted
+        )
     else:
         G_self, G_social = compute_G_empathic(
             model_self, model_other, qs_self, qs_other,
@@ -480,7 +668,7 @@ def test_adjacent_conflict():
 
     print("=" * 70)
     print(f"ASYMMETRIC EMPATHY WITH MULTI-STEP ToM (horizon={POLICY_LENGTH})")
-    print(f"Collision penalty: {COLLISION_PENALTY}")
+    print(f"Collision penalty (cell & edge): {COLLISION_PENALTY}")
     print("=" * 70)
 
     layout = get_layout("narrow")
@@ -527,6 +715,12 @@ def test_adjacent_conflict():
     print("j G_self: " + ", ".join([f"{ACTION_NAMES[a]}:{result_j_0['G_self'][a]:.1f}" for a in range(5)]))
     print(f"j chooses: {ACTION_NAMES[result_j_0['action']]}")
 
+    show_movement_diagram(layout, pos_i, pos_j, goal_i, goal_j,
+                          result_i_0['action'], result_j_0['action'],
+                          alpha_i=0.0, alpha_j=0.0, case_name="Both Selfish",
+                          pred_i_of_j=result_i_0['predicted_other'],
+                          pred_j_of_i=result_j_0['predicted_other'])
+
     # CASE 2: Asymmetric - i empathic, j selfish
     print("\n" + "-" * 70)
     print("CASE 2: ASYMMETRIC EMPATHY")
@@ -550,6 +744,12 @@ def test_adjacent_conflict():
     print("  G_self: " + ", ".join([f"{ACTION_NAMES[a]}:{result_j_asym['G_self'][a]:.1f}" for a in range(5)]))
     print(f"  j chooses: {ACTION_NAMES[result_j_asym['action']]}")
 
+    show_movement_diagram(layout, pos_i, pos_j, goal_i, goal_j,
+                          result_i_asym['action'], result_j_asym['action'],
+                          alpha_i=1.0, alpha_j=0.0, case_name="i Empathic, j Selfish",
+                          pred_i_of_j=result_i_asym['predicted_other'],
+                          pred_j_of_i=result_j_asym['predicted_other'])
+
     # CASE 3: Reversed - i selfish, j empathic
     print("\n" + "-" * 70)
     print("CASE 3: REVERSED ASYMMETRIC")
@@ -571,6 +771,12 @@ def test_adjacent_conflict():
     print("  G_self:   " + ", ".join([f"{ACTION_NAMES[a]}:{result_j_rev['G_self'][a]:.1f}" for a in range(5)]))
     print("  G_social: " + ", ".join([f"{ACTION_NAMES[a]}:{result_j_rev['G_social'][a]:.1f}" for a in range(5)]))
     print(f"  j chooses: {ACTION_NAMES[result_j_rev['action']]}")
+
+    show_movement_diagram(layout, pos_i, pos_j, goal_i, goal_j,
+                          result_i_rev['action'], result_j_rev['action'],
+                          alpha_i=0.0, alpha_j=1.0, case_name="i Selfish, j Empathic",
+                          pred_i_of_j=result_i_rev['predicted_other'],
+                          pred_j_of_i=result_j_rev['predicted_other'])
 
     # Summary
     print("\n" + "=" * 70)
@@ -627,5 +833,118 @@ def test_adjacent_conflict():
         print("\nCase 3: Symmetry NOT broken - both choose same action.")
 
 
+
+def test_jax_tom():
+    """Test JAX-accelerated ToM functions match NumPy versions."""
+    import time
+    from tom.planning.jax_si_empathy_lava import (
+        predict_other_action_recursive_jax,
+        compute_G_empathic_multistep_jax,
+        TOM_DEPTH,
+        TOM_HORIZON,
+    )
+    import jax.numpy as jnp
+
+    print("\n" + "=" * 70)
+    print("JAX ToM VERIFICATION TEST")
+    print("=" * 70)
+
+    layout = get_layout("narrow")
+    pos_i, pos_j = (2, 1), (3, 1)
+    goal_i, goal_j = (5, 1), (0, 1)
+
+    model_i = LavaModel(
+        width=layout.width, height=layout.height,
+        safe_cells=layout.safe_cells,
+        goal_x=goal_i[0], goal_y=goal_i[1],
+        start_pos=pos_i, num_empathy_levels=3
+    )
+    model_j = LavaModel(
+        width=layout.width, height=layout.height,
+        safe_cells=layout.safe_cells,
+        goal_x=goal_j[0], goal_y=goal_j[1],
+        start_pos=pos_j, num_empathy_levels=3
+    )
+
+    qs_i = np.zeros(layout.width * layout.height)
+    qs_i[pos_i[1] * layout.width + pos_i[0]] = 1.0
+    qs_j = np.zeros(layout.width * layout.height)
+    qs_j[pos_j[1] * layout.width + pos_j[0]] = 1.0
+
+    # Extract model components for JAX
+    B_i = np.array(model_i.B["location_state"])
+    B_j = np.array(model_j.B["location_state"])
+    A_i_loc = np.array(model_i.A["location_obs"])
+    C_i_loc = np.array(model_i.C["location_obs"])
+    A_i_edge = np.array(model_i.A["edge_obs"])
+    C_i_edge = np.array(model_i.C["edge_obs"])
+    A_i_cell_collision = np.array(model_i.A["cell_collision_obs"])
+    C_i_cell_collision = np.array([0.0, COLLISION_PENALTY])
+    A_j_loc = np.array(model_j.A["location_obs"])
+    C_j_loc = np.array(model_j.C["location_obs"])
+    A_j_edge = np.array(model_j.A["edge_obs"])
+    C_j_edge = np.array(model_j.C["edge_obs"])
+    A_j_cell_collision = np.array(model_j.A["cell_collision_obs"])
+    C_j_cell_collision = np.array([0.0, COLLISION_PENALTY])
+
+    print(f"\nConfiguration: TOM_DEPTH={TOM_DEPTH}, TOM_HORIZON={TOM_HORIZON}")
+    print(f"Collision penalty: {COLLISION_PENALTY}")
+
+    # Test Case: i empathic (alpha=1), j selfish (alpha=0)
+    alpha_i, alpha_j = 1.0, 0.0
+
+    print("\n--- Testing NumPy version ---")
+    start_np = time.time()
+    result_i_np = plan_with_empathy(model_i, model_j, qs_i, qs_j, alpha_self=alpha_i, alpha_other=alpha_j,
+                                     collision_penalty=COLLISION_PENALTY)
+    result_j_np = plan_with_empathy(model_j, model_i, qs_j, qs_i, alpha_self=alpha_j, alpha_other=alpha_i,
+                                     collision_penalty=COLLISION_PENALTY)
+    time_np = time.time() - start_np
+    print(f"NumPy time: {time_np:.3f}s")
+    print(f"NumPy: i={ACTION_NAMES[result_i_np['action']]}, j={ACTION_NAMES[result_j_np['action']]}")
+
+    print("\n--- Testing JAX version (first call includes JIT compilation) ---")
+    start_jax1 = time.time()
+    pred_j_jax, G_j_social = predict_other_action_recursive_jax(
+        qs_j, qs_i, alpha_j, alpha_i,
+        B_j, B_i,
+        A_j_loc, C_j_loc, A_j_edge, C_j_edge, A_j_cell_collision, C_j_cell_collision,
+        A_i_loc, C_i_loc, A_i_edge, C_i_edge, A_i_cell_collision, C_i_cell_collision,
+        depth=TOM_DEPTH, horizon=TOM_HORIZON,
+    )
+    time_jax1 = time.time() - start_jax1
+    print(f"JAX first call (with JIT): {time_jax1:.3f}s")
+
+    # Second call (JIT cached)
+    print("\n--- Testing JAX version (second call, JIT cached) ---")
+    start_jax2 = time.time()
+    pred_j_jax2, _ = predict_other_action_recursive_jax(
+        qs_j, qs_i, alpha_j, alpha_i,
+        B_j, B_i,
+        A_j_loc, C_j_loc, A_j_edge, C_j_edge, A_j_cell_collision, C_j_cell_collision,
+        A_i_loc, C_i_loc, A_i_edge, C_i_edge, A_i_cell_collision, C_i_cell_collision,
+        depth=TOM_DEPTH, horizon=TOM_HORIZON,
+    )
+    time_jax2 = time.time() - start_jax2
+    print(f"JAX second call (cached): {time_jax2:.3f}s")
+
+    # Compare results
+    print("\n--- Comparison ---")
+    print(f"NumPy j prediction: {ACTION_NAMES[result_i_np['predicted_other']]}")
+    print(f"JAX j prediction:   {ACTION_NAMES[pred_j_jax]}")
+
+    if result_i_np['predicted_other'] == pred_j_jax:
+        print("MATCH - JAX and NumPy produce same prediction!")
+    else:
+        print("MISMATCH - JAX and NumPy differ!")
+
+    if time_jax2 < time_np:
+        speedup = time_np / time_jax2
+        print(f"\nJAX speedup (cached): {speedup:.1f}x faster than NumPy")
+    else:
+        print(f"\nJAX not faster (may need GPU for significant speedup)")
+
+
 if __name__ == "__main__":
     test_adjacent_conflict()
+    test_jax_tom()
