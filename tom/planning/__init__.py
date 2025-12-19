@@ -22,7 +22,7 @@ from .si_empathy_lava import (
     EmpathicLavaPlanner,
 )
 
-from .belief_utils import safe_belief_update
+from .belief_utils import safe_belief_update, compute_vfe
 
 # Hierarchical planners
 from .hierarchical_planner import (
@@ -78,4 +78,5 @@ __all__ = [
     "low_level_plan_jax",
     # Utilities
     "safe_belief_update",
+    "compute_vfe",
 ]

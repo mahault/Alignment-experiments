@@ -438,6 +438,11 @@ def compute_empathic_G(
     - "additive": G_social = G_self + α * G_other (default)
     - "weighted": G_social = (1-α) * G_self + α * G_other (Sanjeev's)
 
+    Note: VFE (Variational Free Energy = -log p(o) = surprise) is computed
+    during belief updates in safe_belief_update(), not during planning.
+    VFE can be used for emotional state analysis (valence = -VFE) but is
+    separate from EFE-based action selection.
+
     For each candidate policy π_i:
 
         Initialise beliefs:
