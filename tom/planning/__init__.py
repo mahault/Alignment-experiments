@@ -22,7 +22,7 @@ from .si_empathy_lava import (
     EmpathicLavaPlanner,
 )
 
-from .belief_utils import safe_belief_update, compute_vfe
+from .belief_utils import safe_belief_update, compute_vfe, compute_total_vfe
 
 # Emotional state tracking (Circumplex Model)
 from .emotional_state import (
@@ -32,6 +32,7 @@ from .emotional_state import (
     compute_valence,
     compute_utility,
     compute_expected_utility,
+    compute_multimodal_emotional_state,
     compute_empathic_emotional_state,
 )
 
@@ -90,6 +91,7 @@ __all__ = [
     # Utilities
     "safe_belief_update",
     "compute_vfe",
+    "compute_total_vfe",
     # Emotional state (Circumplex Model)
     "EmotionalState",
     "EmotionalStateTracker",
@@ -97,5 +99,6 @@ __all__ = [
     "compute_valence",
     "compute_utility",
     "compute_expected_utility",
+    "compute_multimodal_emotional_state",
     "compute_empathic_emotional_state",
 ]

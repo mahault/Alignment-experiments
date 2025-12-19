@@ -417,6 +417,92 @@ class EmotionalStateTracker:
         return "\n".join(lines)
 
 
+def compute_multimodal_emotional_state(
+    observations: dict,
+    A: dict,
+    beliefs: dict,
+    C: dict,
+    arousal_scale: float = 3.0,
+    valence_scale: float = 5.0,
+    eps: float = 1e-16,
+) -> Tuple[float, float, dict]:
+    """
+    Compute emotional state from multi-modal VFE.
+
+    In active inference with multiple observation modalities:
+    - Arousal = sum of belief entropies across state factors
+    - Valence = -(total VFE) = negative surprise across all modalities
+
+    High total VFE = surprising observations = negative valence
+    High belief entropy = uncertain about states = high arousal
+
+    Parameters
+    ----------
+    observations : dict
+        Observed values per modality {"location_obs": 5, "other_obs": 3, ...}
+    A : dict
+        Observation models per modality
+    beliefs : dict
+        Prior beliefs per modality (for computing VFE)
+    C : dict
+        Preferences per modality (for utility calculation)
+    arousal_scale : float
+        Normalization scale for arousal
+    valence_scale : float
+        Normalization scale for valence
+    eps : float
+        Numerical floor
+
+    Returns
+    -------
+    arousal : float
+        Normalized arousal (from belief entropies)
+    valence : float
+        Normalized valence (from negative total VFE)
+    components : dict
+        Breakdown of VFE per modality and entropy per belief
+    """
+    from tom.planning.belief_utils import compute_total_vfe
+
+    # Compute total VFE across modalities
+    vfe_total, vfe_breakdown = compute_total_vfe(observations, A, beliefs, eps)
+
+    # Arousal = sum of belief entropies
+    entropy_breakdown = {}
+    total_entropy = 0.0
+    for name, qs in beliefs.items():
+        ent = compute_belief_entropy(np.asarray(qs), eps)
+        entropy_breakdown[name] = ent
+        total_entropy += ent
+
+    # Valence from VFE: high VFE = negative valence (surprised = bad)
+    # Also add utility component if preferences provided
+    utility = 0.0
+    for modality, obs in observations.items():
+        if modality in C:
+            C_m = np.asarray(C[modality])
+            if len(C_m) > obs:
+                utility += compute_utility(obs, C_m, eps)
+
+    # Raw valence = utility - VFE (reward - surprise)
+    valence_raw = utility - vfe_total
+
+    # Normalize
+    arousal = total_entropy / arousal_scale
+    valence = np.tanh(valence_raw / valence_scale)
+
+    components = {
+        "vfe_total": vfe_total,
+        "vfe_breakdown": vfe_breakdown,
+        "entropy_total": total_entropy,
+        "entropy_breakdown": entropy_breakdown,
+        "utility": utility,
+        "valence_raw": valence_raw,
+    }
+
+    return float(arousal), float(valence), components
+
+
 def compute_empathic_emotional_state(
     own_arousal: float,
     own_valence: float,

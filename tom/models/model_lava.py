@@ -55,6 +55,8 @@ class LavaModel:
         - "edge_obs": Which edge traversing (num_edges + 1 observations)
         - "cell_collision_obs": Binary {no_collision, collision}
         - "edge_collision_obs": Binary {no_collision, collision}
+        - "other_obs": Other agent's position (num_states observations)
+          Used for computing VFE (surprise) when other is not where predicted
     B : dict
         Transition model {"location_state": array}
     C : dict
@@ -277,12 +279,19 @@ class LavaModel:
         # Later this could be made noisy to model imperfect empathy inference
         A_empathy = jnp.eye(self.num_empathy_levels)
 
+        # Other agent position observation model: identity matrix (perfect observation)
+        # Maps from other agent's true position to observed position
+        # Shape: (num_states, num_states) - A_other[obs, true_state]
+        # This enables computing VFE (surprise) when other agent is not where predicted
+        A_other = jnp.eye(self.num_states)
+
         return {
             "location_obs": A_loc,
             "edge_obs": jnp.array(A_edge),
             "cell_collision_obs": jnp.array(A_cell_collision),
             "edge_collision_obs": jnp.array(A_edge_collision),
             "empathy_obs": A_empathy,
+            "other_obs": A_other,
         }
 
     def _build_B(self):
@@ -432,12 +441,18 @@ class LavaModel:
         # Preferences over other agent's empathy (neutral - no preference for particular level)
         C_empathy = np.zeros(self.num_empathy_levels)
 
+        # Preferences over other agent's position (neutral - no preference for where other is)
+        # This modality is used for computing VFE (surprise) about other's position,
+        # not for preferring the other to be in a particular location
+        C_other = np.zeros(self.num_states)
+
         return {
             "location_obs": jnp.array(C_self),
             "edge_obs": jnp.array(C_edge),
             "cell_collision_obs": jnp.array(C_cell_collision),
             "edge_collision_obs": jnp.array(C_edge_collision),
             "empathy_obs": jnp.array(C_empathy),
+            "other_obs": jnp.array(C_other),
         }
 
     def _build_D(self):

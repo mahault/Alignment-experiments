@@ -4,10 +4,13 @@ Utility functions for belief updates with defensive error handling.
 In active inference, belief updates compute:
 - Posterior belief q(s|o) via Bayes rule
 - VFE (Variational Free Energy) = -log p(o) = surprise at observation
+
+Total VFE is the sum across all observation modalities:
+VFE_total = sum_m VFE_m = sum_m -log p(o_m)
 """
 
 import numpy as np
-from typing import Tuple, Union
+from typing import Dict, Tuple, Union
 
 
 def safe_belief_update(
@@ -103,5 +106,64 @@ def compute_vfe(qs: np.ndarray, A: np.ndarray, obs: int, eps: float = 1e-16) -> 
     p_o = np.dot(A[obs], qs)
     p_o = max(p_o, eps)
     return -np.log(p_o)
+
+
+def compute_total_vfe(
+    observations: Dict[str, int],
+    A: Dict[str, np.ndarray],
+    beliefs: Dict[str, np.ndarray],
+    eps: float = 1e-16,
+) -> Tuple[float, Dict[str, float]]:
+    """
+    Compute total VFE as sum across all observation modalities.
+
+    In active inference, total surprise is the sum of surprises
+    from each observation modality:
+
+    VFE_total = sum_m VFE_m = sum_m -log p(o_m | beliefs_m)
+
+    Parameters
+    ----------
+    observations : Dict[str, int]
+        Observed values per modality, e.g.:
+        {"location_obs": 5, "other_obs": 3, "collision_obs": 0}
+
+    A : Dict[str, np.ndarray]
+        Observation models per modality, e.g.:
+        {"location_obs": A_loc, "other_obs": A_other, ...}
+        Each A[m] has shape (num_obs_m, num_states_m)
+
+    beliefs : Dict[str, np.ndarray]
+        Prior beliefs per modality, e.g.:
+        {"location_obs": qs_self, "other_obs": qs_other_predicted, ...}
+        Each beliefs[m] has shape (num_states_m,)
+
+    eps : float
+        Numerical floor for log
+
+    Returns
+    -------
+    vfe_total : float
+        Total VFE summed across all modalities
+
+    vfe_breakdown : Dict[str, float]
+        VFE contribution from each modality
+    """
+    vfe_breakdown = {}
+    vfe_total = 0.0
+
+    for modality, obs in observations.items():
+        if modality not in A or modality not in beliefs:
+            continue
+
+        A_m = np.asarray(A[modality])
+        qs_m = np.asarray(beliefs[modality])
+
+        # VFE for this modality
+        vfe_m = compute_vfe(qs_m, A_m, obs, eps)
+        vfe_breakdown[modality] = vfe_m
+        vfe_total += vfe_m
+
+    return vfe_total, vfe_breakdown
 
 
