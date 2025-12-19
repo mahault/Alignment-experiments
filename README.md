@@ -5,7 +5,8 @@ This repository implements a framework for studying **coordination, alignment, a
 - **Active Inference & Expected Free Energy (EFE)**
 - **Recursive Theory of Mind (ToM) planning**
 - **Empathy-weighted decision-making**
-- **JAX-accelerated computation** (20-100x speedup)
+- **JAX-accelerated computation** (30-86x speedup)
+- **Hierarchical zone-based planning** for complex layouts
 
 The central research goal is to test whether **alignment emerges naturally** when agents attempt to preserve each other's future option sets — and whether **asymmetric empathy** enables coordination in constrained environments.
 
@@ -18,10 +19,11 @@ The central research goal is to test whether **alignment emerges naturally** whe
 3. [Architecture Overview](#3-architecture-overview)
 4. [Code Structure](#4-code-structure)
 5. [Key Concepts](#5-key-concepts)
-6. [Understanding the Results](#6-understanding-the-results)
-7. [JAX Acceleration](#7-jax-acceleration)
-8. [Future Roadmap](#8-future-roadmap)
-9. [Citation](#9-citation)
+6. [Hierarchical Planning](#6-hierarchical-planning)
+7. [Understanding the Results](#7-understanding-the-results)
+8. [JAX Acceleration](#8-jax-acceleration)
+9. [Future Roadmap](#9-future-roadmap)
+10. [Citation](#10-citation)
 
 ---
 
@@ -294,7 +296,78 @@ Components:
 
 ---
 
-## 6. Understanding the Results
+## 6. Hierarchical Planning
+
+For complex layouts with bottlenecks, the **hierarchical planner** decomposes planning into two levels:
+
+### Two-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│              HierarchicalEmpathicPlannerJax                 │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  1. HIGH-LEVEL: Zone transition planning                   │
+│     ┌──────────────────────────────────────────────────┐   │
+│     │  high_level_plan_jax()                           │   │
+│     │  - State: (my_zone, other_zone)                  │   │
+│     │  - Actions: STAY, FORWARD, BACK                  │   │
+│     │  - Empathy at zone level (yielding bottleneck)   │   │
+│     └──────────────────────────────────────────────────┘   │
+│                         ↓                                   │
+│  2. LOW-LEVEL: Within-zone navigation                      │
+│     ┌──────────────────────────────────────────────────┐   │
+│     │  low_level_plan_multistep_jax()                  │   │
+│     │  - Subgoal: exit point or final goal             │   │
+│     │  - Multi-step ToM (depth=2, horizon=3)           │   │
+│     │  - Smart subgoal switching at boundaries         │   │
+│     └──────────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Complexity Reduction
+
+| Approach | Policies | Memory |
+|----------|----------|--------|
+| Flat H=7 | 5^7 = 78,125 | OOM |
+| Hierarchical | 3^3 × 5^3 = 3,375 | OK |
+
+### Usage
+
+```bash
+# Enable hierarchical planning
+python scripts/run_empathy_sweep.py --layouts risk_reward --hierarchical
+
+# Test asymmetric empathy with hierarchical planner
+python scripts/test_asymmetric_empathy.py --layout risk_reward
+```
+
+### Supported Layouts
+
+The hierarchical planner has zone definitions for:
+- `vertical_bottleneck` - Vertical corridor with central chokepoint
+- `symmetric_bottleneck` - Equal-sized zones around chokepoint
+- `narrow` - Single-file corridor (3 zones)
+- `risk_reward` - Safe long path vs risky short path (3 zones)
+
+### Key Result: Asymmetric Empathy Enables Coordination
+
+On `risk_reward` layout with asymmetric empathy (α_i=1.0, α_j=0.0):
+
+```
+Step 4:  i@(3,1) -> STAY    (empathic yields at bottleneck)
+Step 5:  i@(3,1) -> STAY    (continues yielding)
+...
+Step 9:  j@(0,0) -> DOWN    (selfish passes through)
+Step 10: i@(3,1) -> UP      (empathic resumes after j clears)
+...
+Step 14: Both reach goals   -> SUCCESS!
+```
+
+---
+
+## 7. Understanding the Results
 
 ### Output Files
 
@@ -346,9 +419,9 @@ trajectory_j: (4,1) → (4,1) → (4,1) → (3,1) → (2,1) → goal
 
 ---
 
-## 7. JAX Acceleration
+## 8. JAX Acceleration
 
-JAX provides **20-100x speedup** for planning computations.
+JAX provides **30-86x speedup** for planning computations through JIT compilation.
 
 ### Performance Comparison
 
@@ -356,7 +429,8 @@ JAX provides **20-100x speedup** for planning computations.
 |----------|-------|--------------|---------|
 | `predict_other_action_recursive` | ~0.5s | ~0.025s | **20x** |
 | `compute_empathic_G` (125 policies) | ~45s | ~0.5s | **90x** |
-| `compute_empathic_G` (625 policies) | ~5min | ~3s | **100x** |
+| Hierarchical planner (multi-step ToM) | ~1.0s | ~0.013s | **86x** |
+| JAX vs NumPy (ToM prediction) | ~0.12s | ~0.004s | **30x** |
 
 ### Usage
 
@@ -380,7 +454,7 @@ JAX compiles functions on first call (JIT). Expect:
 
 ---
 
-## 8. Future Roadmap
+## 9. Future Roadmap
 
 See `HIERARCHICAL_PLANNER_ROADMAP.md` for detailed plans. Key upcoming features:
 
@@ -418,7 +492,7 @@ Replace hard-coded collision penalties with learned beliefs:
 
 ---
 
-## 9. Citation
+## 10. Citation
 
 If you use this codebase, please cite:
 
