@@ -429,9 +429,14 @@ def compute_empathic_G(
     alpha_other: float,
     epistemic_scale: float = 1.0,
     qs_other_predicted: np.ndarray = None,
+    empathy_mode: str = "additive",
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute empathy-weighted EFE for agent i.
+
+    empathy_mode:
+    - "additive": G_social = G_self + α * G_other (default)
+    - "weighted": G_social = (1-α) * G_self + α * G_other (Sanjeev's)
 
     For each candidate policy π_i:
 
@@ -640,7 +645,13 @@ def compute_empathic_G(
             G_i[i_policy_idx] = 0.0
             G_j_best_response[i_policy_idx] = 0.0
 
-    G_social = G_i + alpha * G_j_best_response
+    # Empathy-weighted social EFE
+    # - "additive": G_social = G_self + α * G_other (default)
+    # - "weighted": G_social = (1-α) * G_self + α * G_other (Sanjeev's)
+    if empathy_mode == "weighted":
+        G_social = (1 - alpha) * G_i + alpha * G_j_best_response
+    else:  # "additive" (default)
+        G_social = G_i + alpha * G_j_best_response
     return G_i, G_j_best_response, G_social
 
 
@@ -728,6 +739,14 @@ class EmpathicLavaPlanner:
     use_jax : bool
         If True, use JAX-accelerated empathy computation (50-100x faster).
         Falls back to NumPy if JAX is not available.
+    empathy_mode : str
+        Formula for combining self and other EFE:
+        - "additive": G_social = G_self + α * G_other (default, current)
+        - "weighted": G_social = (1-α) * G_self + α * G_other (Sanjeev's)
+    tom_mode : str
+        How to predict other's action:
+        - "deterministic": argmin(G_j) - assume other takes best action (default)
+        - "probabilistic": softmax(-γ * G_j) - distribution over actions
     """
     agent_i: LavaAgent
     agent_j: LavaAgent
@@ -735,6 +754,8 @@ class EmpathicLavaPlanner:
     alpha_other: float = 0.0  # Observed/inferred empathy of other agent (for ToM)
     epistemic_scale: float = 1.0
     use_jax: bool = True  # Default to JAX for performance
+    empathy_mode: str = "additive"  # "additive" or "weighted"
+    tom_mode: str = "deterministic"  # "deterministic" or "probabilistic"
 
     def plan(
         self,
@@ -863,6 +884,7 @@ class EmpathicLavaPlanner:
                     self.alpha_other,  # Observed empathy of other agent
                     epistemic_scale=self.epistemic_scale,
                     qs_other_predicted=qs_j_predicted,  # Use predicted j position for step 0
+                    empathy_mode=self.empathy_mode,
                 )
             except ImportError as e:
                 # Fall back to NumPy if JAX not available
@@ -887,6 +909,7 @@ class EmpathicLavaPlanner:
                     self.alpha_other,  # Observed empathy of other agent
                     epistemic_scale=self.epistemic_scale,
                     qs_other_predicted=qs_j_predicted,  # Use predicted j position for step 0
+                    empathy_mode=self.empathy_mode,
                 )
         else:
             # Use NumPy version explicitly
@@ -905,6 +928,7 @@ class EmpathicLavaPlanner:
                 self.alpha_other,  # Observed empathy of other agent
                 epistemic_scale=self.epistemic_scale,
                 qs_other_predicted=qs_j_predicted,  # Use predicted j position for step 0
+                empathy_mode=self.empathy_mode,
             )
 
         # Compute policy posterior: q(π) ∝ exp(-γ * G_social)

@@ -1039,12 +1039,17 @@ def _compute_G_empathic_multistep_hierarchical_jax(
     C_other_cell_collision: jnp.ndarray,
     qs_other_predicted: jnp.ndarray = None,
     horizon: int = TOM_HORIZON,
+    empathy_mode: str = "additive",
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
     JAX-JIT-compiled multi-step empathic EFE for hierarchical planner.
 
     Matches test_asymmetric_empathy.py structure but with subgoal-oriented C_loc.
     Uses lax.scan for horizon loop, vmap for action evaluation.
+
+    empathy_mode:
+    - "additive": G_social = G_self + α * G_other (default)
+    - "weighted": G_social = (1-α) * G_self + α * G_other (Sanjeev's)
     """
     qs_other_step0 = qs_other_predicted if qs_other_predicted is not None else qs_other
 
@@ -1122,17 +1127,23 @@ def _compute_G_empathic_multistep_hierarchical_jax(
         init_carry = (qs_self_1, qs_other_step0, total_G_self, total_G_other)
         (_, _, final_G_self, final_G_other), _ = lax.scan(greedy_step, init_carry, None, length=horizon-1)
 
-        G_social = final_G_self + alpha_self * final_G_other
+        # Empathy-weighted social EFE
+        # - "additive": G_social = G_self + α * G_other (default)
+        # - "weighted": G_social = (1-α) * G_self + α * G_other (Sanjeev's)
+        if empathy_mode == "weighted":
+            G_social = (1 - alpha_self) * final_G_self + alpha_self * final_G_other
+        else:  # "additive" (default)
+            G_social = final_G_self + alpha_self * final_G_other
         return final_G_self, G_social
 
     G_self_all, G_social_all = vmap(compute_for_action)(jnp.arange(5))
     return G_self_all, G_social_all
 
 
-# JIT-compiled version with horizon as static argument
+# JIT-compiled version with horizon and empathy_mode as static arguments
 _compute_G_empathic_multistep_hierarchical_jit = jax.jit(
     _compute_G_empathic_multistep_hierarchical_jax,
-    static_argnums=(16,)
+    static_argnums=(16, 17)
 )
 
 

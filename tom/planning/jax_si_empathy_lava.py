@@ -577,6 +577,7 @@ def compute_empathic_G_jax(
     alpha_other: float,
     epistemic_scale: float = 1.0,
     qs_other_predicted: np.ndarray = None,
+    empathy_mode: str = "additive",
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     JAX-accelerated empathic EFE computation.
@@ -710,7 +711,13 @@ def compute_empathic_G_jax(
     )
 
     # Empathy-weighted social EFE
-    G_social_jax = G_i_jax + alpha * G_j_jax
+    # Two modes:
+    # - "additive": G_social = G_self + α * G_other (default, current)
+    # - "weighted": G_social = (1-α) * G_self + α * G_other (Sanjeev's formulation)
+    if empathy_mode == "weighted":
+        G_social_jax = (1 - alpha) * G_i_jax + alpha * G_j_jax
+    else:  # "additive" (default)
+        G_social_jax = G_i_jax + alpha * G_j_jax
 
     # Convert back to NumPy for compatibility
     G_i = np.array(G_i_jax)
@@ -775,11 +782,17 @@ def compute_G_empathic_multistep_jax(
     C_other_cell_collision: jnp.ndarray,
     qs_other_predicted: jnp.ndarray = None,
     horizon: int = TOM_HORIZON,
+    empathy_mode: str = "additive",
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
     JAX version of compute_G_empathic_multistep from test_asymmetric_empathy.py.
     Computes G_self and G_social for each of the 5 first actions.
     Uses greedy rollout for subsequent steps.
+
+    empathy_mode:
+    - "additive": G_social = G_self + α * G_other (default)
+    - "weighted": G_social = (1-α) * G_self + α * G_other (Sanjeev's)
+
     Returns: (G_self_all[5], G_social_all[5])
     """
     # Use predicted other position for step 0 if provided
@@ -859,14 +872,21 @@ def compute_G_empathic_multistep_jax(
         init_carry = (qs_self_1, qs_other_step0, total_G_self, total_G_other)
         (_, _, final_G_self, final_G_other), _ = lax.scan(greedy_step, init_carry, None, length=horizon-1)
 
-        G_social = final_G_self + alpha_self * final_G_other
+        # Empathy-weighted social EFE
+        # - "additive": G_social = G_self + α * G_other (default)
+        # - "weighted": G_social = (1-α) * G_self + α * G_other (Sanjeev's)
+        if empathy_mode == "weighted":
+            G_social = (1 - alpha_self) * final_G_self + alpha_self * final_G_other
+        else:  # "additive" (default)
+            G_social = final_G_self + alpha_self * final_G_other
         return final_G_self, G_social
 
     G_self_all, G_social_all = vmap(compute_for_action)(jnp.arange(5))
     return G_self_all, G_social_all
 
 
-_compute_G_empathic_multistep_jax_jit = jax.jit(compute_G_empathic_multistep_jax, static_argnums=(16,))
+# static_argnums: (16,) = horizon, (17,) = empathy_mode
+_compute_G_empathic_multistep_jax_jit = jax.jit(compute_G_empathic_multistep_jax, static_argnums=(16, 17))
 
 
 def predict_other_action_recursive_jax(
