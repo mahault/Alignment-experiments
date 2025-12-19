@@ -1128,32 +1128,104 @@ def create_other_model(self_model, other_goal):
     return other_model
 ```
 
-### 8.4 Experiment: VFE-Based Emotional State
+### 8.4 Experiment: VFE-Based Emotional State ✅ COMPLETE
 
 **From Pattisapu et al. 2024**: Compute valence/arousal from VFE/EFE.
 
-- **Arousal** ∝ EFE (expected uncertainty/action urgency)
-- **Valence** ∝ -VFE (negative surprise = positive valence)
+**Implementation** (tom/planning/emotional_state.py):
 
-**Implementation**:
+Following the paper's formulation:
+- **Arousal** = H[Q(s|o)] = entropy of posterior beliefs (uncertainty)
+- **Valence** = Utility - Expected Utility = log P(o|C) - E[log P(o|C)] (reward prediction error)
+
+**Circumplex Model**: 8 emotion sectors based on angle in arousal-valence space:
+- 0° = Happy, 45° = Excited, 90° = Alert, 135° = Angry
+- 180° = Sad, 225° = Depressed, 270° = Calm, 315° = Relaxed
+
+**Key Functions**:
 ```python
-def compute_emotional_state(qs, A, B, C, action):
-    """Compute valence and arousal from free energy quantities."""
-    # VFE: surprise at current observation
-    vfe = compute_vfe(qs, A, observation)
+def compute_belief_entropy(qs: np.ndarray) -> float:
+    """Arousal = entropy of posterior beliefs H[Q(s|o)]."""
 
-    # EFE: expected future uncertainty
-    efe = compute_efe(qs, A, B, C, action)
+def compute_valence(obs, qs_prior, A, C) -> float:
+    """Valence = Utility - Expected Utility (reward prediction error)."""
 
-    # Map to circumplex
-    valence = -vfe  # Low surprise = positive valence
-    arousal = efe   # High EFE = high arousal (uncertainty)
+def compute_multimodal_emotional_state(observations, A, beliefs, C, ...) -> Tuple[float, float, dict]:
+    """Compute arousal/valence from multi-modal VFE across all observation modalities."""
 
-    return valence, arousal
+class EmotionalState:
+    arousal: float  # Normalized belief entropy
+    valence: float  # Normalized reward prediction error
+    intensity: float  # sqrt(arousal^2 + valence^2)
+    angle: float  # atan2(arousal, valence) in degrees
+
+    def emotion_label(self) -> str:
+        """Map angle to emotion: happy, excited, alert, angry, sad, depressed, calm, relaxed"""
+
+class EmotionalStateTracker:
+    """Track emotional states over episode for analysis."""
 ```
 
-**Experiment**: Track emotional state over episode, analyze how empathy affects
-emotional dynamics during coordination.
+**Multi-Modal VFE**: Total VFE sums across observation modalities:
+- VFE_location: Surprise about own position
+- VFE_other: Surprise about other agent's position (ToM prediction error!)
+
+When ToM predicts wrong about other agent's position → high VFE_other → negative valence.
+
+#### 8.4.1 Other Agent's Emotional State During ToM ✅ COMPLETE
+
+**Status**: Completed 2025-12-19
+
+**Problem**: During sophisticated inference, we simulate what the other agent does.
+We should ALSO infer what the other agent's emotional state would be based on their
+predicted beliefs. Empathic agents care about other's wellbeing, not just their actions.
+
+**Implementation** (infer_other_emotional_state in emotional_state.py):
+```python
+def infer_other_emotional_state(
+    qs_other_predicted: np.ndarray,  # ToM-predicted posterior
+    qs_other_prior: np.ndarray,      # ToM-predicted prior
+    obs_other_predicted: int,         # What we predict they observe
+    A_other: np.ndarray,             # Their observation model
+    C_other: np.ndarray,             # Their preferences
+    arousal_scale: float = 3.0,
+    valence_scale: float = 5.0,
+) -> Tuple[float, float, EmotionalState]:
+    """
+    Infer other agent's emotional state during ToM.
+
+    Returns:
+    - arousal: Other's predicted arousal (their uncertainty)
+    - valence: Other's predicted valence (their reward prediction error)
+    - emotional_state: Full EmotionalState with angle and emotion label
+    """
+```
+
+**Use Cases**:
+1. **Empathic EFE weighting**: Weight other's wellbeing by their predicted valence
+2. **Emotional contagion**: Own arousal/valence influenced by other's state
+3. **Analysis**: Track how coordination success correlates with emotional states
+
+**Empathic emotional state** (already implemented):
+```python
+def compute_empathic_emotional_state(
+    own_arousal, own_valence,
+    other_arousal, other_valence,
+    empathy_weight,
+) -> Tuple[float, float]:
+    """
+    An empathic agent's emotional state is influenced by other's state.
+
+    social_arousal = (1 - α) * own_arousal + α * other_arousal
+    social_valence = (1 - α) * own_valence + α * other_valence
+    """
+```
+
+**Files**:
+- `tom/planning/emotional_state.py`: Core emotional state functions
+- `tom/planning/belief_utils.py`: VFE computation (compute_total_vfe)
+- `tom/models/model_lava.py`: Added A["other_obs"] and C["other_obs"]
+- `scripts/test_emotional_circumplex.py`: Test script
 
 ### 8.5 Experiment: Sophisticated Inference Tree (Pitliya et al. 2025)
 

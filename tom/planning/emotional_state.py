@@ -503,6 +503,72 @@ def compute_multimodal_emotional_state(
     return float(arousal), float(valence), components
 
 
+def infer_other_emotional_state(
+    qs_other_predicted: np.ndarray,
+    qs_other_prior: np.ndarray,
+    obs_other_predicted: int,
+    A_other: np.ndarray,
+    C_other: np.ndarray,
+    arousal_scale: float = 3.0,
+    valence_scale: float = 5.0,
+    eps: float = 1e-16,
+) -> Tuple[float, float, EmotionalState]:
+    """
+    Infer other agent's emotional state during ToM (Theory of Mind).
+
+    During sophisticated inference, we simulate what the other agent
+    experiences. This function computes what the other's arousal and
+    valence would be based on their predicted beliefs.
+
+    Parameters
+    ----------
+    qs_other_predicted : np.ndarray
+        Predicted posterior belief of other agent (from ToM simulation)
+    qs_other_prior : np.ndarray
+        Predicted prior belief of other agent (before observation)
+    obs_other_predicted : int
+        Predicted observation the other agent would receive
+    A_other : np.ndarray
+        Other agent's observation model
+    C_other : np.ndarray
+        Other agent's preferences (log preferences)
+    arousal_scale : float
+        Normalization scale for arousal
+    valence_scale : float
+        Normalization scale for valence
+    eps : float
+        Numerical floor
+
+    Returns
+    -------
+    arousal : float
+        Other agent's predicted arousal (normalized)
+    valence : float
+        Other agent's predicted valence (normalized)
+    emotional_state : EmotionalState
+        Full emotional state object with angle and emotion label
+    """
+    # Arousal = entropy of other's posterior beliefs (their uncertainty)
+    arousal_raw = compute_belief_entropy(qs_other_predicted, eps)
+
+    # Valence = their utility - expected utility (their reward prediction error)
+    valence_raw = compute_valence(
+        obs_other_predicted, qs_other_prior, A_other, C_other, eps
+    )
+
+    # Normalize
+    arousal = arousal_raw / arousal_scale
+    valence = float(np.tanh(valence_raw / valence_scale))
+
+    emotional_state = EmotionalState(
+        arousal=arousal,
+        valence=valence,
+        timestep=-1,  # ToM inference, not actual timestep
+    )
+
+    return arousal, valence, emotional_state
+
+
 def compute_empathic_emotional_state(
     own_arousal: float,
     own_valence: float,

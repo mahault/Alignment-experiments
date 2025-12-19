@@ -33,6 +33,7 @@ from .emotional_state import (
     compute_utility,
     compute_expected_utility,
     compute_multimodal_emotional_state,
+    infer_other_emotional_state,
     compute_empathic_emotional_state,
 )
 
@@ -100,5 +101,6 @@ __all__ = [
     "compute_utility",
     "compute_expected_utility",
     "compute_multimodal_emotional_state",
+    "infer_other_emotional_state",
     "compute_empathic_emotional_state",
 ]
