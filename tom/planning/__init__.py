@@ -24,6 +24,17 @@ from .si_empathy_lava import (
 
 from .belief_utils import safe_belief_update, compute_vfe
 
+# Emotional state tracking (Circumplex Model)
+from .emotional_state import (
+    EmotionalState,
+    EmotionalStateTracker,
+    compute_belief_entropy,
+    compute_valence,
+    compute_utility,
+    compute_expected_utility,
+    compute_empathic_emotional_state,
+)
+
 # Hierarchical planners
 from .hierarchical_planner import (
     SpatialZone,
@@ -79,4 +90,12 @@ __all__ = [
     # Utilities
     "safe_belief_update",
     "compute_vfe",
+    # Emotional state (Circumplex Model)
+    "EmotionalState",
+    "EmotionalStateTracker",
+    "compute_belief_entropy",
+    "compute_valence",
+    "compute_utility",
+    "compute_expected_utility",
+    "compute_empathic_emotional_state",
 ]
