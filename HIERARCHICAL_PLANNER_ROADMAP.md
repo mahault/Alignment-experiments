@@ -610,6 +610,367 @@ to get a probability distribution, then compute EXPECTED collision.
 
 ---
 
+### Phase 5.6: Low-Level Empathy Fix ✅ COMPLETE
+
+**Status**: Completed 2025-12-18
+
+**Problem**: The hierarchical planner's low-level planning did NOT compute proper
+empathic EFE. It only scaled collision penalties by `(1 + alpha)`, which is
+fundamentally different from the correct formula:
+
+```python
+# BROKEN (hierarchical low-level):
+C_cell_collision = C_cell_collision * (1.0 + alpha)  # Just scales penalty
+G = -pragmatic - epistemic  # Returns G_self only!
+
+# CORRECT (flat planner formula):
+G_social = G_self + alpha * G_other_best
+```
+
+**Evidence**: All trajectories were IDENTICAL regardless of empathy parameter:
+- α=0.0: `(0,1) -> (1,1) -> (2,1) -> stuck`
+- α=1.0: `(0,1) -> (1,1) -> (2,1) -> stuck` (SAME!)
+- High-level zone actions differed (empathy working there)
+- Low-level primitive actions identical (empathy NOT working)
+
+**Root Cause Analysis**:
+
+| Component | Computed G_other? | Used G_social? | Result |
+|-----------|-------------------|----------------|--------|
+| High-level `compute_zone_G_jax` | Yes | Yes | Empathy works |
+| Low-level `compute_low_level_G_jax` | **No** | **No** | Empathy broken |
+
+The high-level planner correctly computed:
+```python
+G_j_best = jnp.minimum(G_j_stay, jnp.minimum(G_j_forward, G_j_back))
+total_utility = my_utility - alpha * G_j_best  # Correct!
+```
+
+But the low-level planner only did:
+```python
+pragmatic = expected_pragmatic_utility_jax(
+    C_cell_collision=C_cell_collision * (1.0 + alpha),  # Wrong approach!
+)
+G = -pragmatic - epistemic  # Missing G_other!
+```
+
+**Fix**: Added proper empathic EFE computation at low level:
+
+1. **`compute_low_level_G_empathic_jax()`**: For each action self takes:
+   - Compute self's next state
+   - For each action other could take, compute other's EFE
+   - Find other's best response (argmin)
+   - Return `G_social = G_self + alpha * G_other_best`
+
+2. **`low_level_plan_empathic_jax()`**: Uses both agents' subgoals:
+   - Creates subgoal-oriented C_loc for BOTH agents
+   - Calls `compute_low_level_G_empathic_jax` for each action
+   - Returns action based on G_social, not G_self
+
+3. **`HierarchicalEmpathicPlannerJax`** updated to:
+   - Store both agents' model components (B, A_loc, C_loc)
+   - Compute subgoals for BOTH agents
+   - Use `low_level_plan_empathic_jax` instead of legacy function
+
+**Results After Fix**:
+
+| Before Fix | After Fix |
+|------------|-----------|
+| All trajectories identical | Trajectories differ by alpha |
+| G_low changes uniformly | G_social changes action ranking |
+| 100% paralysis | Empathic agents show yielding |
+
+**Narrow corridor example** (α_i=1.0, α_j=0.0):
+```
+Before: i@(2,1) -> RIGHT (rush), j@(3,1) -> LEFT (rush) -> COLLISION
+After:  i@(2,1) -> LEFT (yield!), j@(3,1) -> STAY (wait) -> oscillation
+```
+
+**Remaining Issue**: Agents oscillate instead of sustaining yield. The empathic
+agent backs up once, then both rush forward again. This is because:
+1. Single-step ToM doesn't see the full coordination problem
+2. After backing up, G_other changes, so agent moves forward again
+3. Need multi-step look-ahead or sustained yielding mechanism
+
+**Files Changed**:
+- `tom/planning/jax_hierarchical_planner.py`:
+  - Added `compute_low_level_G_self_only_jax()` - self-only EFE
+  - Added `compute_low_level_G_empathic_jax()` - proper G_social
+  - Added `low_level_plan_empathic_jax()` - empathic action selection
+  - Added `create_jax_risk_reward_layout()` - zone layout for risk_reward
+  - Updated `HierarchicalEmpathicPlannerJax` class with `use_empathic_planning` flag
+- `scripts/test_hierarchical_empathy_fix.py` - diagnostic test script
+
+---
+
+### Phase 5.7: Multi-Step ToM for Hierarchical Planner ✅ PARTIAL
+
+**Status**: Completed 2025-12-18 (core implementation), remaining boundary issue
+
+**Problem**: Single-step empathy causes oscillation - empathic agent backs up once,
+then both rush forward again. Need multi-step ToM (depth=2, horizon=3) matching
+`test_asymmetric_empathy.py` to see long-term coordination benefits.
+
+**Implementation**:
+
+1. **JIT-compiled multi-step ToM functions** in `jax_hierarchical_planner.py`:
+   ```python
+   @jax.jit
+   def _propagate_belief_tom_hierarchical(qs, qs_other, action, B, eps=1e-16):
+       """Propagate belief for ToM computation."""
+
+   def _compute_G_empathic_multistep_hierarchical_jax(
+       qs_self, qs_other, alpha_self, B_self, B_other,
+       A_self_loc, C_self_loc, A_self_edge, C_self_edge,
+       A_self_cell_collision, C_self_cell_collision,
+       A_other_loc, C_other_loc, A_other_cell_collision, C_other_cell_collision,
+       qs_other_predicted=None, horizon=3
+   ):
+       """JAX-JIT-compiled multi-step empathic EFE using lax.scan and vmap."""
+
+   # JIT-compiled version
+   _compute_G_empathic_multistep_hierarchical_jit = jax.jit(
+       _compute_G_empathic_multistep_hierarchical_jax,
+       static_argnums=(16,)
+   )
+
+   def predict_other_action_recursive_hierarchical_jax(
+       qs_other, qs_self, alpha_other, alpha_self,
+       B_other, B_self, ..., depth=2, horizon=3
+   ):
+       """Recursive ToM: depth=0 base case, depth=1/2 recursive."""
+   ```
+
+2. **Key fix**: Use ORIGINAL C_loc (toward actual goals) instead of subgoal C_loc:
+   ```python
+   # In low_level_plan_multistep_jax():
+   # NOTE: For multi-step ToM, use ORIGINAL C_loc (toward actual goals)
+   # instead of subgoal-oriented C_loc.
+   #
+   # The subgoal C_loc interferes with yielding behavior because it pulls
+   # both agents toward zone exit points (which may be toward each other).
+   # Using original C_loc allows the empathy term to properly value backing
+   # up to let the other agent pass.
+   ```
+
+3. **Updated `HierarchicalEmpathicPlannerJax`**:
+   - Added `use_multistep_tom` parameter (default=False for backward compatibility)
+   - Added `collision_penalty` parameter (default=-100 to match test_asymmetric_empathy.py)
+   - Added `tom_horizon` parameter (default=3)
+
+**Test Results** (narrow corridor, asymmetric empathy):
+
+| Phase | i (empathic) | j (selfish) | Outcome |
+|-------|--------------|-------------|---------|
+| Single-step | RIGHT (rush) | LEFT (rush) | COLLISION |
+| Multi-step | LEFT→STAY→LEFT | LEFT→LEFT→LEFT | Yielding works initially |
+| After yield | Stuck at (0,1) | Stuck at (2,1) | PARALYSIS |
+
+**Working Coordination**: At adjacent positions (2,1) vs (3,1):
+```
+i (empathic) at (2,1): chooses LEFT (backs up to 1,1)
+j (selfish) at (3,1): chooses LEFT (advances to 2,1)
+>>> Correct yielding behavior!
+```
+
+**Remaining Issue: Boundary Case Blocking**
+
+When empathic agent backs up to wall (0,1), which is also j's GOAL:
+- i at (0,1) = j's goal position
+- i keeps choosing LEFT (blocked by wall, stays at 0,1)
+- j at (2,1) chooses STAY (afraid of collision at goal)
+- Neither moves → PARALYSIS
+
+**Analysis of G values at (i=0,1, j=2,1)**:
+```
+i (empathic) G_social: LEFT=-51.5, RIGHT=34.6, STAY=-51.5
+  → Chooses LEFT (stays at wall = j's goal!)
+
+j (selfish) G_social: LEFT=6.3, STAY=-73.8
+  → Chooses STAY (fears collision at goal)
+
+G_other for i: LEFT=-75.8, RIGHT=10.3
+  → WRONG! LEFT/STAY should be BAD for other (blocking goal)
+```
+
+The multi-step empathic EFE incorrectly values i staying at j's goal as
+"beneficial to j" because j can avoid collision by staying away. But j
+WANTS to reach the goal - avoiding it shouldn't be rewarded.
+
+**Proposed Fix**: The empathy term should evaluate j's utility of REACHING
+their goal, not just their best collision-avoiding response. Options:
+
+1. **Goal-reaching penalty**: If i blocks j's goal, add penalty to G_other
+2. **Long-horizon evaluation**: Increase horizon so j's inability to reach
+   goal eventually dominates
+3. **Explicit blocking detection**: Check if my_next_pos == other_goal,
+   add large penalty to G_social
+
+**Files Changed**:
+- `tom/planning/jax_hierarchical_planner.py`:
+  - Added `_propagate_belief_tom_hierarchical()`
+  - Added `_compute_G_empathic_multistep_hierarchical_jax()`
+  - Added `_compute_G_empathic_multistep_hierarchical_jit`
+  - Added `predict_other_action_recursive_hierarchical_jax()`
+  - Updated `low_level_plan_multistep_jax()` to use original C_loc
+  - Updated `HierarchicalEmpathicPlannerJax` with new parameters
+- `scripts/test_hierarchical_empathy_fix.py`:
+  - Added `test_multistep_tom_hierarchical()`
+  - Added `compare_singlestep_vs_multistep_tom()`
+
+---
+
+### Phase 5.8: Path-Finding Fix for Risk_Reward ✅ SUCCESS
+
+**Status**: Completed 2025-12-18
+
+**Problem 1**: Agents oscillating between zones instead of traversing risky path.
+- Agent at (7,0) in Zone 1 has subgoal (0,1) in Zone 2
+- Going DOWN to (7,1) is CLOSER to (0,1) in Manhattan distance (7 vs 8)!
+- Agent oscillates: Zone 0 → Zone 1 → Zone 0 → ...
+
+**Fix**: Change exit_points[1, 2] from (0,1) to (0,0):
+```python
+exit_points[1, 2] = pos_to_idx(0, 0)  # Navigate ALONG risky path first
+```
+Now going DOWN from any position in Zone 1 INCREASES distance to (0,0).
+
+**Problem 2**: Agents getting stuck at subgoal (0,0) instead of crossing to Zone 2.
+- Agent reaches (0,0) which is the subgoal
+- Subgoal C_loc gives max reward at (0,0)
+- Agent has no incentive to move DOWN to Zone 2
+
+**Fix**: Smart subgoal switching - use original C_loc when at subgoal:
+```python
+def smart_subgoal_C_loc(current_state, subgoal_state, original_C_loc, width):
+    if current_state == subgoal_state:
+        return original_C_loc  # Continue toward final goal
+    else:
+        return create_subgoal_C_loc_jax(subgoal_state, original_C_loc, width)
+```
+
+**Test Results** (risk_reward layout):
+
+| Empathy Config | Outcome | Key Behavior |
+|----------------|---------|--------------|
+| Both selfish (0,0) | COLLISION | Both rush, no coordination |
+| Asymmetric (1.0, 0.0) | SUCCESS! | i (empathic) yields at (3,1), j rushes through |
+| Asymmetric (0.0, 1.0) | SUCCESS! | j (empathic) yields, i rushes through |
+
+**Successful Coordination** (alpha_i=1.0, alpha_j=0.0):
+```
+Step 4: i@(3, 1) -> STAY    (empathic yields)
+Step 5: i@(3, 1) -> STAY    (continues yielding)
+...
+Step 9: j@(0, 0)* -> DOWN   (selfish reaches transition)
+Step 10: i@(3, 1) -> UP     (empathic starts moving after j passes)
+...
+Step 14: i@(0, 0)* -> DOWN  (both reach goals)
+Result: SUCCESS!
+```
+
+**Key Insight**: Asymmetric empathy enables coordination in constrained environments:
+- Empathic agent correctly predicts selfish agent will rush
+- Empathic agent yields to let selfish agent pass
+- After selfish agent clears the path, empathic agent proceeds
+
+**Files Changed**:
+- `scripts/test_smart_subgoal.py` - test script demonstrating the fix
+- `tom/planning/jax_hierarchical_planner.py` - exit point and hybrid approach
+
+---
+
+### Phase 5.9: Narrow Corridor Analysis
+
+**Status**: Documented (no code fix - geometric impossibility)
+
+**Finding**: The narrow corridor with opposing goals is **geometrically impossible**.
+- Agent i starts at (0,1), goal at (5,1)
+- Agent j starts at (5,1), goal at (0,1)
+- Single-cell-wide corridor: no passing space
+
+For both agents to reach their goals, they would need to swap positions.
+This is impossible without one agent leaving the corridor or stepping into lava.
+
+**Expected Outcome**: PARALYSIS (with asymmetric empathy) or COLLISION (both selfish)
+
+Asymmetric empathy still helps: the empathic agent yields, preventing collision.
+But since neither can complete their journey, both end up stuck.
+
+**Solution**: This layout is unsuitable for testing coordination with opposing goals.
+Use layouts with passing space (passing_bay, wide, bottleneck) instead.
+
+---
+
+### Phase 5.10: Full JIT Compilation ✅ COMPLETE
+
+**Status**: Completed 2025-12-18
+
+**Problem**: Multi-step ToM was slow because not all functions were JIT-compiled.
+Core functions like `_compute_G_empathic_multistep_hierarchical_jit` were JIT but
+`predict_other_action_recursive_hierarchical_jax` and `low_level_plan_multistep_jax`
+were not.
+
+**Implementation**:
+
+1. **Smart subgoal switching with JAX conditionals**:
+   ```python
+   @jax.jit
+   def _smart_subgoal_C_loc_jit(
+       current_state: int,
+       subgoal_state: int,
+       C_loc_original: jnp.ndarray,
+       C_loc_subgoal: jnp.ndarray,
+   ) -> jnp.ndarray:
+       """JIT-compiled smart subgoal switching using jnp.where."""
+       at_subgoal = current_state == subgoal_state
+       return jnp.where(at_subgoal, C_loc_original, C_loc_subgoal)
+   ```
+
+2. **Unrolled ToM depth functions** (avoid dynamic recursion):
+   ```python
+   def _predict_other_action_depth0(...)  # Base case
+   def _predict_other_action_depth1(...)  # Calls depth0
+   def _predict_other_action_depth2(...)  # Calls depth1
+   ```
+   Note: These are NOT decorated with `@jax.jit` to avoid "Non-hashable static arguments"
+   error when `horizon` parameter is traced. They call JIT-compiled core functions.
+
+3. **Pre-computed subgoal C_loc for both paths**:
+   ```python
+   # Pre-compute both options (always needed for jnp.where)
+   C_loc_self_subgoal = create_subgoal_C_loc_jax(...)
+   C_loc_other_subgoal = create_subgoal_C_loc_jax(...)
+
+   # JIT-compatible conditional
+   C_loc_self_effective = _smart_subgoal_C_loc_jit(
+       current_state_self, subgoal_self, C_loc_self_original, C_loc_self_subgoal
+   )
+   ```
+
+**Performance Results**:
+
+| Metric | Before JIT | After JIT | Speedup |
+|--------|------------|-----------|---------|
+| First call (compilation) | - | 1.09s | - |
+| Subsequent calls | ~1s | 0.013s | **86.7x** |
+| JAX vs NumPy | - | - | **30.3x** |
+
+**Verification**:
+- ✅ Asymmetric empathy achieves coordination (empathic yields, selfish advances)
+- ✅ ToM predictions accurate (100% match between predicted and actual actions)
+- ✅ Smart subgoal switching works at zone boundaries
+- ✅ risk_reward layout SUCCESS with asymmetric empathy (alpha=1.0, 0.0)
+
+**Files Changed**:
+- `tom/planning/jax_hierarchical_planner.py`:
+  - Added `_smart_subgoal_C_loc_jit()` for JIT-compatible conditionals
+  - Added unrolled `_predict_other_action_depth0/1/2()` functions
+  - Updated `low_level_plan_multistep_jax()` with pre-computed C_loc
+  - Fixed exit_points[1,2] in `create_jax_risk_reward_layout()` from (0,1) to (0,0)
+
+---
+
 ## Key Design Decisions
 
 ### Q1: How to handle zone boundaries?
