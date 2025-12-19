@@ -830,6 +830,8 @@ class EmpathicLavaPlanner:
                     A_i_cell_collision, C_i_cell_collision,
                     depth=JAX_TOM_DEPTH,
                     horizon=TOM_HORIZON,
+                    tom_mode=self.tom_mode,
+                    gamma=gamma,
                 )
             except ImportError:
                 # Fall back to NumPy if JAX not available

@@ -86,6 +86,9 @@ class ExperimentConfig:
     # Planner type
     use_hierarchical: bool = False  # Use hierarchical planner for supported layouts
 
+    # Empathy formulation mode
+    empathy_mode: str = "additive"  # "additive" or "weighted" (Sanjeev's)
+
     def __post_init__(self):
         if self.layouts is None:
             self.layouts = get_all_layout_names()
@@ -495,6 +498,7 @@ def setup_experiment(
             alpha=alpha_i,
             alpha_other=alpha_j,
             gamma=config.gamma,
+            empathy_mode=config.empathy_mode,
         )
         planner_j = HierarchicalEmpathicPlannerJax(
             agent_j, agent_i,
@@ -502,10 +506,13 @@ def setup_experiment(
             alpha=alpha_j,
             alpha_other=alpha_i,
             gamma=config.gamma,
+            empathy_mode=config.empathy_mode,
         )
     else:
-        planner_i = EmpathicLavaPlanner(agent_i, agent_j, alpha=alpha_i, alpha_other=alpha_j)
-        planner_j = EmpathicLavaPlanner(agent_j, agent_i, alpha=alpha_j, alpha_other=alpha_i)
+        planner_i = EmpathicLavaPlanner(agent_i, agent_j, alpha=alpha_i, alpha_other=alpha_j,
+                                        empathy_mode=config.empathy_mode)
+        planner_j = EmpathicLavaPlanner(agent_j, agent_i, alpha=alpha_j, alpha_other=alpha_i,
+                                        empathy_mode=config.empathy_mode)
 
     return env, planner_i, planner_j
 
@@ -684,6 +691,9 @@ def main():
                        help="Quick test with fewer configs")
     parser.add_argument("--hierarchical", action="store_true",
                        help="Use hierarchical planner (for vertical_bottleneck, symmetric_bottleneck, narrow)")
+    parser.add_argument("--empathy-mode", choices=["additive", "weighted"],
+                       default="additive",
+                       help="Empathy formula: 'additive' (G_self + α*G_other) or 'weighted' ((1-α)*G_self + α*G_other)")
 
     args = parser.parse_args()
 
@@ -695,6 +705,7 @@ def main():
         max_timesteps=args.max_steps,
         verbose=args.verbose,
         use_hierarchical=args.hierarchical,
+        empathy_mode=args.empathy_mode,
     )
 
     # Quick mode for testing
@@ -715,6 +726,7 @@ def main():
     print(f"  Horizon: {config.horizon}")
     print(f"  Max steps: {config.max_timesteps}")
     print(f"  Hierarchical: {config.use_hierarchical}")
+    print(f"  Empathy mode: {config.empathy_mode}")
 
     # Run sweep
     df = run_sweep(config, mode=args.mode)

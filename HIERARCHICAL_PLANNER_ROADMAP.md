@@ -1067,6 +1067,47 @@ class EmpathicLavaPlanner:
 
 **Experiment**: Run sweep with both modes, compare coordination outcomes.
 
+#### 8.2.1 Experimental Results: Additive vs Weighted Empathy ✅ COMPLETE
+
+**Status**: Completed 2025-12-19
+
+**Implementation**: Added `empathy_mode` parameter to all planner classes:
+- `EmpathicLavaPlanner` in `si_empathy_lava.py`
+- `compute_empathic_G_jax` in `jax_si_empathy_lava.py`
+- `HierarchicalEmpathicPlannerJax` in `jax_hierarchical_planner.py`
+
+**Test Results** (narrow and wide corridors):
+
+| Layout | Mode | Selfish (0/0) | Symmetric (0.5/0.5) | Asymmetric (1/0) | Asymmetric (0/1) |
+|--------|------|---------------|---------------------|------------------|------------------|
+| narrow | additive | COLLISION | COLLISION | COLLISION | COLLISION |
+| narrow | weighted | COLLISION | COLLISION | **PARALYSIS** | **PARALYSIS** |
+| wide | additive | SUCCESS | SUCCESS | SUCCESS | SUCCESS |
+| wide | weighted | SUCCESS | SUCCESS | **PARALYSIS** | **PARALYSIS** |
+
+**Key Finding**: Weighted mode with α=1.0 causes agents to become too passive.
+
+**Analysis**:
+```python
+# Additive mode at α=1.0:
+G_social = G_self + 1.0 * G_other
+# Agent still has full weight on self, plus cares about other
+# Result: Takes actions that benefit both
+
+# Weighted mode at α=1.0:
+G_social = (1 - 1.0) * G_self + 1.0 * G_other = G_other
+# Agent ONLY cares about other's utility, ignores own goals!
+# Result: Purely altruistic → no self-directed action → PARALYSIS
+```
+
+**Conclusion**: The additive formulation is more suitable for coordination because:
+1. It preserves agent autonomy (always has weight on self)
+2. Higher α adds consideration for other without eliminating self-interest
+3. Weighted α=1.0 creates "pathological altruism" - agent has no personal motivation
+
+**Recommendation**: Use additive mode (default). Weighted mode only useful for studying
+pure altruism edge cases.
+
 ### 8.3 Experiment: Self-Model as Other-Model
 
 **Hypothesis**: Assuming other agent has same model (copy of self) may produce
@@ -1164,6 +1205,65 @@ def compute_expected_collision(self, my_action, p_other_actions):
 ```
 
 **Experiment**: Compare argmin (deterministic) vs softmax (stochastic) ToM predictions.
+
+#### 8.6.1 Implementation: tom_mode Parameter ✅ COMPLETE
+
+**Status**: Completed 2025-12-19
+
+**Implementation**: Added `tom_mode` parameter to all planner classes:
+- `"deterministic"` (default): Other agent predicted via `argmin(G_other)` - assumes rational best-response
+- `"probabilistic"`: Other agent predicted via `softmax(-γ * G_other)` - samples from action distribution
+
+**Files Modified**:
+- `tom/planning/si_empathy_lava.py`:
+  - Added `tom_mode` parameter to `EmpathicLavaPlanner` class
+  - Added `_select_action_from_G()` helper function
+
+- `tom/planning/jax_si_empathy_lava.py`:
+  - Added `_select_action_from_G()` helper function
+  - Updated `predict_other_action_recursive_jax()` with `tom_mode` and `gamma` parameters
+  - Updated JIT `static_argnums` for string parameters
+
+- `tom/planning/jax_hierarchical_planner.py`:
+  - Added `_select_action_from_G_jax()` helper function
+  - Updated depth functions (`_predict_other_action_depth0/1/2`) with `tom_mode` and `gamma`
+  - Updated `predict_other_action_recursive_hierarchical_jax()` with `tom_mode` and `gamma`
+  - Updated `low_level_plan_multistep_jax()` with `tom_mode` parameter
+  - Updated `HierarchicalEmpathicPlannerJax` class with `tom_mode` parameter
+
+**Helper Function**:
+```python
+def _select_action_from_G(G_social: np.ndarray, tom_mode: str, gamma: float) -> int:
+    """Select action from G values based on tom_mode."""
+    if tom_mode == "probabilistic":
+        log_q = -gamma * G_social
+        log_q = log_q - log_q.max()  # Numerical stability
+        q = np.exp(log_q)
+        q = q / q.sum()
+        return int(np.random.choice(len(q), p=q))
+    else:  # "deterministic"
+        return int(np.argmin(G_social))
+```
+
+**Test Results**:
+```
+Testing tom_mode parameter...
+  Deterministic mode: action=1
+  Probabilistic mode (10 runs): actions=[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  Unique actions: {1}
+SUCCESS: tom_mode parameter works!
+```
+
+Note: When G values strongly favor one action (as in this test), probabilistic mode
+will still predominantly select that action. The difference emerges in ambiguous
+situations where multiple actions have similar G values.
+
+**Use Cases**:
+- `deterministic`: Standard ToM, assumes other agent is fully rational
+- `probabilistic`: Models bounded rationality, useful for:
+  - Robustness to prediction errors
+  - Exploring emergent coordination patterns
+  - More realistic agent behavior modeling
 
 ### 8.7 Symmetry Breaking Problem
 

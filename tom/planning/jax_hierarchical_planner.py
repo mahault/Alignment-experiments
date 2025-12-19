@@ -1147,6 +1147,26 @@ _compute_G_empathic_multistep_hierarchical_jit = jax.jit(
 )
 
 
+def _select_action_from_G_jax(G_social: jnp.ndarray, tom_mode: str, gamma: float) -> int:
+    """Select action from G values based on tom_mode.
+
+    tom_mode:
+    - "deterministic": argmin(G) - assume other takes best action
+    - "probabilistic": sample from softmax(-gamma * G) distribution
+    """
+    if tom_mode == "probabilistic":
+        # Softmax policy: q(a) ∝ exp(-gamma * G(a))
+        log_q = -gamma * G_social
+        log_q = log_q - log_q.max()  # Numerical stability
+        q = jnp.exp(log_q)
+        q = q / q.sum()
+        # Sample from distribution (using numpy for randomness)
+        import numpy as np
+        return int(np.random.choice(len(q), p=np.array(q)))
+    else:  # "deterministic" (default)
+        return int(jnp.argmin(G_social))
+
+
 def _predict_other_action_depth0(
     qs_other: jnp.ndarray,
     qs_self: jnp.ndarray,
@@ -1164,6 +1184,8 @@ def _predict_other_action_depth0(
     A_self_cell_collision: jnp.ndarray,
     C_self_cell_collision: jnp.ndarray,
     horizon: int = TOM_HORIZON,
+    tom_mode: str = "deterministic",
+    gamma: float = 8.0,
 ) -> Tuple[int, jnp.ndarray]:
     """ToM depth=0: base case. Calls JIT-compiled EFE computation."""
     _, G_social = _compute_G_empathic_multistep_hierarchical_jit(
@@ -1176,7 +1198,7 @@ def _predict_other_action_depth0(
         A_self_cell_collision, C_self_cell_collision,
         None, horizon,
     )
-    return int(jnp.argmin(G_social)), G_social
+    return _select_action_from_G_jax(G_social, tom_mode, gamma), G_social
 
 
 def _predict_other_action_depth1(
@@ -1199,6 +1221,8 @@ def _predict_other_action_depth1(
     A_self_cell_collision: jnp.ndarray,
     C_self_cell_collision: jnp.ndarray,
     horizon: int = TOM_HORIZON,
+    tom_mode: str = "deterministic",
+    gamma: float = 8.0,
 ) -> Tuple[int, jnp.ndarray]:
     """ToM depth=1: predict using depth=0. Calls JIT-compiled functions."""
     # Depth 0: predict what other thinks we'll do
@@ -1210,7 +1234,7 @@ def _predict_other_action_depth1(
         A_self_cell_collision, C_self_cell_collision,
         A_other_loc, C_other_loc,
         A_other_cell_collision, C_other_cell_collision,
-        horizon,
+        horizon, tom_mode, gamma,
     )
 
     # Compute our predicted position (JIT-compiled)
@@ -1228,7 +1252,7 @@ def _predict_other_action_depth1(
         A_self_cell_collision, C_self_cell_collision,
         qs_self_predicted, horizon,
     )
-    return int(jnp.argmin(G_social)), G_social
+    return _select_action_from_G_jax(G_social, tom_mode, gamma), G_social
 
 
 def _predict_other_action_depth2(
@@ -1251,6 +1275,8 @@ def _predict_other_action_depth2(
     A_self_cell_collision: jnp.ndarray,
     C_self_cell_collision: jnp.ndarray,
     horizon: int = TOM_HORIZON,
+    tom_mode: str = "deterministic",
+    gamma: float = 8.0,
 ) -> Tuple[int, jnp.ndarray]:
     """ToM depth=2: predict using depth=1. Calls JIT-compiled functions."""
     # Depth 1: predict what other thinks we'll do
@@ -1263,7 +1289,7 @@ def _predict_other_action_depth2(
         A_other_loc, C_other_loc,
         A_other_edge, C_other_edge,
         A_other_cell_collision, C_other_cell_collision,
-        horizon,
+        horizon, tom_mode, gamma,
     )
 
     # Compute our predicted position (JIT-compiled)
@@ -1281,7 +1307,7 @@ def _predict_other_action_depth2(
         A_self_cell_collision, C_self_cell_collision,
         qs_self_predicted, horizon,
     )
-    return int(jnp.argmin(G_social)), G_social
+    return _select_action_from_G_jax(G_social, tom_mode, gamma), G_social
 
 
 def predict_other_action_recursive_hierarchical_jax(
@@ -1305,15 +1331,21 @@ def predict_other_action_recursive_hierarchical_jax(
     C_self_cell_collision: jnp.ndarray,
     depth: int = TOM_DEPTH,
     horizon: int = TOM_HORIZON,
+    tom_mode: str = "deterministic",
+    gamma: float = 8.0,
 ) -> Tuple[int, np.ndarray]:
     """
     Recursive ToM prediction for hierarchical planner (with subgoal-oriented preferences).
 
-    Uses unrolled JIT-compiled functions for depth=0,1,2.
+    Uses unrolled functions for depth=0,1,2.
 
     depth=0: Base case, assume opponent stays in place
     depth=1: Predict opponent assuming they use depth=0
     depth=2: Predict opponent assuming they use depth=1
+
+    tom_mode:
+    - "deterministic": argmin(G) - assume other takes best action (default)
+    - "probabilistic": sample from softmax(-gamma * G) distribution
 
     Returns: (predicted_action, G_social_array[5])
     """
@@ -1321,7 +1353,7 @@ def predict_other_action_recursive_hierarchical_jax(
     qs_self_jax = jnp.array(qs_self)
 
     if depth == 0:
-        action, G_social = _predict_other_action_depth0_jit(
+        action, G_social = _predict_other_action_depth0(
             qs_other_jax, qs_self_jax, alpha_other,
             B_other, B_self,
             A_other_loc, C_other_loc,
@@ -1329,10 +1361,10 @@ def predict_other_action_recursive_hierarchical_jax(
             A_other_cell_collision, C_other_cell_collision,
             A_self_loc, C_self_loc,
             A_self_cell_collision, C_self_cell_collision,
-            horizon,
+            horizon, tom_mode, gamma,
         )
     elif depth == 1:
-        action, G_social = _predict_other_action_depth1_jit(
+        action, G_social = _predict_other_action_depth1(
             qs_other_jax, qs_self_jax, alpha_other, alpha_self,
             B_other, B_self,
             A_other_loc, C_other_loc,
@@ -1341,7 +1373,7 @@ def predict_other_action_recursive_hierarchical_jax(
             A_self_loc, C_self_loc,
             A_self_edge, C_self_edge,
             A_self_cell_collision, C_self_cell_collision,
-            horizon,
+            horizon, tom_mode, gamma,
         )
     else:  # depth == 2
         action, G_social = _predict_other_action_depth2(
@@ -1353,7 +1385,7 @@ def predict_other_action_recursive_hierarchical_jax(
             A_self_loc, C_self_loc,
             A_self_edge, C_self_edge,
             A_self_cell_collision, C_self_cell_collision,
-            horizon,
+            horizon, tom_mode, gamma,
         )
 
     return int(action), np.array(G_social)
@@ -1718,6 +1750,8 @@ def low_level_plan_multistep_jax(
     width: int,
     gamma: float = 8.0,
     horizon: int = TOM_HORIZON,
+    empathy_mode: str = "additive",
+    tom_mode: str = "deterministic",
     eps: float = 1e-16,
 ) -> Tuple[int, jnp.ndarray, jnp.ndarray, int]:
     """
@@ -1729,6 +1763,7 @@ def low_level_plan_multistep_jax(
     - Recursive ToM (depth=2): "I think you think I..."
     - Multi-step horizon (3 steps): Sees consequence of yielding over time
     - Smart subgoal switching: use original C_loc when at subgoal
+    - tom_mode: "deterministic" (argmin) or "probabilistic" (softmax sampling)
 
     Parameters
     ----------
@@ -1806,7 +1841,7 @@ def low_level_plan_multistep_jax(
         A_loc_self, C_loc_self_effective,
         A_edge, C_edge,
         A_cell_collision, C_cell_collision,
-        horizon,
+        horizon, tom_mode, gamma,
     )
 
     # Compute other's predicted next position
@@ -1825,7 +1860,7 @@ def low_level_plan_multistep_jax(
         A_cell_collision, C_cell_collision,
         A_loc_other, C_loc_other_original,  # ORIGINAL for empathy toward other's goal
         A_cell_collision, C_cell_collision,
-        qs_other_predicted, horizon,
+        qs_other_predicted, horizon, empathy_mode,
     )
 
     # Softmax policy selection
@@ -2086,6 +2121,8 @@ class HierarchicalEmpathicPlannerJax:
         use_multistep_tom: bool = False,
         tom_horizon: int = TOM_HORIZON,
         collision_penalty: float = -100.0,
+        empathy_mode: str = "additive",
+        tom_mode: str = "deterministic",
     ):
         self.agent_i = agent_i
         self.agent_j = agent_j
@@ -2097,6 +2134,8 @@ class HierarchicalEmpathicPlannerJax:
         self.use_multistep_tom = use_multistep_tom
         self.tom_horizon = tom_horizon
         self.collision_penalty = collision_penalty
+        self.empathy_mode = empathy_mode  # "additive" or "weighted"
+        self.tom_mode = tom_mode  # "deterministic" or "probabilistic"
 
         # Create JAX planners for both agents (for zone-level decisions)
         self.planner_i = JaxHierarchicalPlanner.from_model(
@@ -2231,6 +2270,8 @@ class HierarchicalEmpathicPlannerJax:
                 layout.width,
                 self.gamma,
                 self.tom_horizon,
+                self.empathy_mode,
+                self.tom_mode,
             )
         elif self.use_empathic_planning:
             # Single-step empathic planning

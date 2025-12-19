@@ -889,6 +889,25 @@ def compute_G_empathic_multistep_jax(
 _compute_G_empathic_multistep_jax_jit = jax.jit(compute_G_empathic_multistep_jax, static_argnums=(16, 17))
 
 
+def _select_action_from_G(G_social: np.ndarray, tom_mode: str, gamma: float) -> int:
+    """Select action from G values based on tom_mode.
+
+    tom_mode:
+    - "deterministic": argmin(G) - assume other takes best action
+    - "probabilistic": sample from softmax(-gamma * G) distribution
+    """
+    if tom_mode == "probabilistic":
+        # Softmax policy: q(a) ∝ exp(-gamma * G(a))
+        log_q = -gamma * G_social
+        log_q = log_q - log_q.max()  # Numerical stability
+        q = np.exp(log_q)
+        q = q / q.sum()
+        # Sample from distribution
+        return int(np.random.choice(len(q), p=q))
+    else:  # "deterministic" (default)
+        return int(np.argmin(G_social))
+
+
 def predict_other_action_recursive_jax(
     qs_other: np.ndarray,
     qs_self: np.ndarray,
@@ -910,12 +929,19 @@ def predict_other_action_recursive_jax(
     C_self_cell_collision: np.ndarray,
     depth: int = TOM_DEPTH,
     horizon: int = TOM_HORIZON,
+    tom_mode: str = "deterministic",
+    gamma: float = 8.0,
 ) -> Tuple[int, np.ndarray]:
     """
     JAX-accelerated recursive ToM prediction (from test_asymmetric_empathy.py).
     depth=0: Base case, assume opponent stays in place
     depth=1: Predict opponent assuming they use depth=0
     depth=2: Predict opponent assuming they use depth=1
+
+    tom_mode:
+    - "deterministic": argmin(G) - assume other takes best action (default)
+    - "probabilistic": sample from softmax(-gamma * G) distribution
+
     Returns: (predicted_action, G_social_array[5])
     """
     qs_other_jax = jnp.array(qs_other)
@@ -947,7 +973,7 @@ def predict_other_action_recursive_jax(
             None, horizon,
         )
         G_social_np = np.array(G_social)
-        return int(np.argmin(G_social_np)), G_social_np
+        return _select_action_from_G(G_social_np, tom_mode, gamma), G_social_np
 
     our_predicted_action, _ = predict_other_action_recursive_jax(
         qs_self, qs_other,
@@ -960,6 +986,7 @@ def predict_other_action_recursive_jax(
         A_other_edge, C_other_edge,
         A_other_cell_collision, C_other_cell_collision,
         depth=depth - 1, horizon=horizon,
+        tom_mode=tom_mode, gamma=gamma,
     )
 
     qs_self_predicted = np.array(propagate_belief_tom_jax(
@@ -978,4 +1005,4 @@ def predict_other_action_recursive_jax(
     )
 
     G_social_np = np.array(G_social)
-    return int(np.argmin(G_social_np)), G_social_np
+    return _select_action_from_G(G_social_np, tom_mode, gamma), G_social_np
