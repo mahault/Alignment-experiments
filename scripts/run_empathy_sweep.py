@@ -7,8 +7,14 @@ This script systematically tests empathy effects across:
 3. Both start configurations (A and B) for role asymmetry testing
 4. Multiple seeds for statistical power
 
+Emotional State Tracking (Circumplex Model - Pattisapu et al. 2024):
+- Arousal = H[Q(s|o)] = entropy of posterior beliefs (uncertainty)
+- Valence = Utility - Expected Utility (reward prediction error)
+- Maps to 8 emotions: happy, excited, alert, angry, sad, depressed, calm, relaxed
+- Social emotional state = weighted average of own + other's state (by empathy alpha)
+
 Outputs:
-- Detailed CSV with all metrics
+- Detailed CSV with all metrics including emotional states
 - Summary statistics
 - Data ready for plotting in analysis/plot_empathy_sweeps.py
 
@@ -46,6 +52,11 @@ from tom.envs.env_lava_variants import get_layout, get_all_layout_names, LAYOUT_
 from tom.planning.si_empathy_lava import EmpathicLavaPlanner
 from tom.planning.jax_hierarchical_planner import HierarchicalEmpathicPlannerJax, has_jax_zoned_layout
 from tom.planning import safe_belief_update
+from tom.planning.emotional_state import (
+    EmotionalStateTracker,
+    infer_other_emotional_state,
+    compute_empathic_emotional_state,
+)
 from src.metrics.paralysis_detection import detect_paralysis
 
 
@@ -162,17 +173,38 @@ def run_episode(
 
     A_i = np.asarray(model_i.A["location_obs"])
     D_i = np.asarray(model_i.D["location_state"])
+    C_i = np.asarray(model_i.C["location_obs"])
     A_j = np.asarray(model_j.A["location_obs"])
     D_j = np.asarray(model_j.D["location_state"])
+    C_j = np.asarray(model_j.C["location_obs"])
 
     num_states_i = model_i.num_states
     num_states_j = model_j.num_states
+
+    # Emotional state trackers (Circumplex Model: arousal=entropy, valence=reward prediction error)
+    tracker_i = EmotionalStateTracker(
+        arousal_scale=np.log(num_states_i),  # Max entropy for this state space
+        valence_scale=5.0,
+    )
+    tracker_j = EmotionalStateTracker(
+        arousal_scale=np.log(num_states_j),
+        valence_scale=5.0,
+    )
 
     # Initial beliefs
     qs_i, _ = safe_belief_update(obs[0], A_i, D_i, agent_name="agent_i", verbose=False)
     qs_j_observed = get_other_agent_belief(obs[0], num_states_j)
     qs_j, _ = safe_belief_update(obs[1], A_j, D_j, agent_name="agent_j", verbose=False)
     qs_i_observed = get_other_agent_belief(obs[1], num_states_i)
+
+    # Record initial emotional states
+    obs_i_init = int(np.asarray(obs[0]["location_obs"])[0])
+    obs_j_init = int(np.asarray(obs[1]["location_obs"])[0])
+    qs_i_prior = D_i.copy()
+    qs_j_prior = D_j.copy()
+
+    tracker_i.record_from_beliefs(qs_i, obs_i_init, qs_i_prior, A_i, C_i, timestep=0)
+    tracker_j.record_from_beliefs(qs_j, obs_j_init, qs_j_prior, A_j, C_j, timestep=0)
 
     # Track metrics
     trajectory_i = []
@@ -313,6 +345,10 @@ def run_episode(
         likelihood_i = A_i[next_obs_i]
         likelihood_j = A_j[next_obs_j]
 
+        # Store prior for emotional state computation
+        qs_i_prior = qs_i_pred.copy()
+        qs_j_prior = qs_j_pred.copy()
+
         unnorm_i = likelihood_i * qs_i_pred
         denom_i = unnorm_i.sum()
         if denom_i > 1e-10:
@@ -326,6 +362,10 @@ def run_episode(
             qs_j = unnorm_j / denom_j
         else:
             qs_j = qs_j_pred.copy()
+
+        # Record emotional states (Circumplex Model)
+        tracker_i.record_from_beliefs(qs_i, next_obs_i, qs_i_prior, A_i, C_i, timestep=t+1)
+        tracker_j.record_from_beliefs(qs_j, next_obs_j, qs_j_prior, A_j, C_j, timestep=t+1)
 
         # Update observed positions
         qs_j_observed = get_other_agent_belief(next_obs[0], num_states_j)
@@ -394,6 +434,35 @@ def run_episode(
     single_success = (goal_reached_i or goal_reached_j) and not both_success
     failure = not goal_reached_i and not goal_reached_j
 
+    # Emotional state metrics (Circumplex Model)
+    avg_state_i = tracker_i.get_average()
+    avg_state_j = tracker_j.get_average()
+    emotions_i = tracker_i.get_emotions()
+    emotions_j = tracker_j.get_emotions()
+
+    # Compute empathic emotional states (weighted by empathy parameter)
+    if avg_state_i and avg_state_j:
+        social_arousal_i, social_valence_i = compute_empathic_emotional_state(
+            avg_state_i.arousal, avg_state_i.valence,
+            avg_state_j.arousal, avg_state_j.valence,
+            planner_i.alpha
+        )
+        social_arousal_j, social_valence_j = compute_empathic_emotional_state(
+            avg_state_j.arousal, avg_state_j.valence,
+            avg_state_i.arousal, avg_state_i.valence,
+            planner_j.alpha
+        )
+    else:
+        social_arousal_i = social_valence_i = 0.0
+        social_arousal_j = social_valence_j = 0.0
+
+    # Dominant emotion (most frequent)
+    def get_dominant_emotion(emotions):
+        if not emotions:
+            return "none"
+        from collections import Counter
+        return Counter(emotions).most_common(1)[0][0]
+
     return {
         # Success metrics
         "both_success": both_success,
@@ -426,6 +495,21 @@ def run_episode(
         # Internal metrics
         "G_i": G_i_total,
         "G_j": G_j_total,
+
+        # Emotional state metrics (Circumplex Model: Pattisapu et al. 2024)
+        "arousal_i": avg_state_i.arousal if avg_state_i else 0.0,
+        "valence_i": avg_state_i.valence if avg_state_i else 0.0,
+        "emotion_i": avg_state_i.emotion_label() if avg_state_i else "none",
+        "arousal_j": avg_state_j.arousal if avg_state_j else 0.0,
+        "valence_j": avg_state_j.valence if avg_state_j else 0.0,
+        "emotion_j": avg_state_j.emotion_label() if avg_state_j else "none",
+        "dominant_emotion_i": get_dominant_emotion(emotions_i),
+        "dominant_emotion_j": get_dominant_emotion(emotions_j),
+        # Empathic emotional state (weighted by alpha)
+        "social_arousal_i": social_arousal_i,
+        "social_valence_i": social_valence_i,
+        "social_arousal_j": social_arousal_j,
+        "social_valence_j": social_valence_j,
 
         # Trajectories (as strings for CSV)
         "trajectory_i": str(trajectory_i),
@@ -625,6 +709,11 @@ def save_results(df: pd.DataFrame, config: ExperimentConfig, prefix: str = "empa
         "paralysis", "paralysis_type", "cycle_length", "stay_streak",
         "timesteps", "steps_i", "steps_j", "arrival_order", "arrival_gap",
         "G_i", "G_j",
+        # Emotional state metrics (Circumplex Model)
+        "arousal_i", "valence_i", "emotion_i", "dominant_emotion_i",
+        "arousal_j", "valence_j", "emotion_j", "dominant_emotion_j",
+        "social_arousal_i", "social_valence_i",
+        "social_arousal_j", "social_valence_j",
         "trajectory_i", "trajectory_j"
     ]
     column_order = [c for c in column_order if c in df.columns]
@@ -665,6 +754,25 @@ def print_summary(df: pd.DataFrame):
             alpha_df = sym_df[sym_df['alpha_i'] == alpha]
             print(f"  alpha={alpha:.1f}: Success={alpha_df['both_success'].mean():.1%}, "
                   f"Paralysis={alpha_df['paralysis'].mean():.1%}")
+
+    # Emotional state summary (if columns exist)
+    if 'arousal_i' in df.columns and 'valence_i' in df.columns:
+        print("\n--- Emotional States (Circumplex Model) ---")
+        print(f"  Agent i: Arousal={df['arousal_i'].mean():.2f}, Valence={df['valence_i'].mean():.2f}")
+        print(f"  Agent j: Arousal={df['arousal_j'].mean():.2f}, Valence={df['valence_j'].mean():.2f}")
+
+        # Emotions by outcome
+        if 'emotion_i' in df.columns:
+            success_df = df[df['both_success'] == True]
+            fail_df = df[df['both_success'] == False]
+            if len(success_df) > 0:
+                print(f"\n  Success cases:")
+                print(f"    Arousal: i={success_df['arousal_i'].mean():.2f}, j={success_df['arousal_j'].mean():.2f}")
+                print(f"    Valence: i={success_df['valence_i'].mean():.2f}, j={success_df['valence_j'].mean():.2f}")
+            if len(fail_df) > 0:
+                print(f"  Failure cases:")
+                print(f"    Arousal: i={fail_df['arousal_i'].mean():.2f}, j={fail_df['arousal_j'].mean():.2f}")
+                print(f"    Valence: i={fail_df['valence_i'].mean():.2f}, j={fail_df['valence_j'].mean():.2f}")
 
     print("\n" + "=" * 80)
 
