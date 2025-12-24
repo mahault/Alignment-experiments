@@ -68,10 +68,10 @@ class LavaModel:
     """
     width: int = 4
     height: int = 3
-    goal_x: int = None
-    goal_y: int = None
-    safe_cells: list = None  # Optional: List of (x,y) tuples that are safe
-    start_pos: tuple = None  # Optional: Starting position for this agent
+    goal_x: int | None = None
+    goal_y: int | None = None
+    safe_cells: list | None = None  # Optional: List of (x,y) tuples that are safe
+    start_pos: tuple | None = None  # Optional: Starting position for this agent
     num_empathy_levels: int = 3  # Number of discrete empathy states (for inferring other's empathy)
 
     def __post_init__(self):

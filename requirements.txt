@@ -1,6 +1,7 @@
 # Core dependencies
 numpy>=1.24.0
-pymdp>=0.0.7
+#interactively-pymdp, branch 1.0 alpha https://github.com/infer-actively/pymdp/tree/v1.0.0_alpha
+git+https://github.com/infer-actively/pymdp.git@e72ca5daf65d3d75fe3b0ea8d5700f0f6ebd4888#egg=inferactively-pymdp
 
 # Numerical computation
 numba>=0.56.0
@@ -18,3 +19,5 @@ notebook>=7.0.0
 # Configuration and utilities
 pyyaml>=6.0
 tqdm>=4.65.0
+# not sure if this will work if you rmachine doesn't support cuda13. Need to test it out
+jax[cuda13]
