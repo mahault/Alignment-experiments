@@ -1,0 +1,37 @@
+#VRML_SIM R2025a utf8
+# license: Apache License 2.0
+# license url: http://www.apache.org/licenses/LICENSE-2.0
+# A parameterized target object (fruit/goal) for robot navigation scenarios
+# STATIC version - does not move when hit by robots
+
+PROTO Target [
+  field SFVec3f    translation  0 0 0
+  field SFRotation rotation     0 0 1 0
+  field SFString   name         "Target"
+  field SFColor    color        1 0 0      # Default red color
+  field SFFloat    radius       0.075      # Target sphere radius
+]
+{
+  Solid {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    children [
+      Shape {
+        appearance PBRAppearance {
+          baseColor IS color
+          metalness 0.3
+          roughness 0.5
+          emissiveColor IS color
+          emissiveIntensity 0.3
+        }
+        geometry Sphere {
+          radius IS radius
+          subdivision 3
+        }
+      }
+    ]
+    # NO boundingObject = no collision, purely visual marker
+    # NO physics = static, immovable
+  }
+}
