@@ -46,7 +46,8 @@ Based on Sophisticated Inference (Friston et al. 2020) and ToM extension (2508.0
 - Collision avoidance via preferences C, NOT hard clamps
 - ToM: `Q(a_other) ~ softmax(-gamma * G_other)`, not greedy-x heuristic
 - Bayesian belief update over other agent's hidden role/intent
-- JAX vmap over 5^3=125 policies, lax.scan over horizon steps
+- Blocked-motion mixing: congested transitions predict "stuck" futures (not ghosting)
+- JAX vmap over 5^5=3125 policies, lax.scan over horizon steps, JIT-compiled
 - Self-contained (no external server needed)
 
 **Key Classes**:
@@ -120,10 +121,10 @@ Example:
 ### Planner Parameters (in tom_planner.py)
 
 ```python
-self.depth = 3              # Sophisticated inference depth (5^3=125 policies)
+self.depth = 5              # Sophisticated inference depth (5^5=3125 policies)
 self.gamma = 8.0            # Inverse temperature for softmax action selection
 self.epistemic_scale = 1.0  # Weight on epistemic EFE term
-self.discount = 0.95        # Future EFE discount factor
+self.discount = 0.9         # Future EFE discount factor
 self.goal_tolerance = 0.3   # When to consider goal reached
 ```
 
@@ -134,9 +135,9 @@ N_Y = 5     # Y bins for finer lateral resolution over [-0.5, 0.5]
 N_POSE = 55 # Total pose states per agent (11 * 5)
 N_ACTIONS = 5  # {STAY, FORWARD, BACK, LEFT, RIGHT}
 N_ROLES = 4    # Hidden role states {PUSH, YIELD_LEFT, YIELD_RIGHT, WAIT}
-ROBOT_RADIUS = 0.30  # meters
-COLLISION_DIST = 0.60 # danger threshold
-CAUTION_DIST = 1.0    # caution threshold
+ROBOT_RADIUS = 0.25  # meters
+COLLISION_DIST = 0.50 # danger threshold (physical contact)
+CAUTION_DIST = 0.80   # caution threshold (uncomfortably close)
 ```
 
 ---
@@ -215,7 +216,7 @@ lateral:     [0.05,  0.75,    0.75,   0.10]
 still:       [0.10,  0.10,    0.10,   0.80]
 ```
 
-`A_risk` thresholds: danger < 0.6m (collision distance), caution < 1.0m, else safe.
+`A_risk` thresholds: danger < 0.5m (collision distance), caution < 0.8m, else safe.
 
 #### B Matrices (Transitions)
 
@@ -233,11 +234,12 @@ FORWARD/BACK are relative to goal direction (`+x_bin` or `-x_bin` depending on w
 | Vector | Shape | Values |
 |--------|-------|--------|
 | `C_self` | (55,) | +80 at goal bin, -3*manhattan elsewhere, -0.1 offset |
-| `C_risk` | (3,) | [0, 0, -6] for safe/caution/danger |
+| `C_risk` | (3,) | [0, -2, -25] for safe/caution/danger |
 | `C_motion` | (4,) | [0, 0, 0, 0] neutral (purely epistemic modality) |
 
 `C_risk` is the key innovation: collision avoidance as preference, not hard clamp.
-`-6` for danger penalizes collisions while `0` for safe/caution avoids rewarding stasis.
+`-25` for danger must compete with goal utility (+80) so ToM correctly values clearing space.
+`-2` for caution gives a mild gradient to maintain distance.
 
 #### D Vectors (Priors)
 
@@ -260,11 +262,28 @@ G_pragmatic = -(C_self . q(s_self'))                          [location utility]
 G_epistemic = -scale * [H(q(role')) - E_o[H(q(role'|o))]]    [info gain about role]
 ```
 
-**Sophisticated inference** (depth=3): Enumerate all 5^3 = 125 policies.
-For each policy `[a1, a2, a3]`:
-- Roll out 3 steps, accumulating discounted G at each step
+**Sophisticated inference** (depth=5): Enumerate all 5^5 = 3125 policies.
+For each policy `[a1, a2, a3, a4, a5]`:
+- Roll out 5 steps, accumulating discounted G at each step
 - At each step: transition beliefs via B matrices, compute pragmatic + epistemic
-- Use `lax.scan` for the horizon loop, `vmap` over all 125 policies
+- Use `lax.scan` for the horizon loop, `vmap` over all 3125 policies
+
+### Blocked-Motion Mixing (Fix A)
+
+After computing raw transitions, the model checks `p(danger)` from the predicted
+joint next-state. If high, both agents' transitions mix with "stuck at current state":
+
+```
+q(s_agent') = (1 - p_block) * q(s_agent'_raw) + p_block * q(s_agent)
+where p_block = clip(p_danger * 0.9, 0, 0.95)
+```
+
+This is the key mechanism for ToM empathy: if the other tries to push through you,
+its predicted future becomes "no progress + danger" → high G_other. When the empathic
+agent considers moving aside, it predicts lower G_other, and empathy emerges correctly.
+
+**Not a hack**: this encodes physics ("pushing into an occupied space leads to stuck/bad
+outcomes") into the generative model. ToM does the rest.
 
 ### Theory of Mind (ToM) Other Prediction
 
@@ -273,31 +292,35 @@ For each policy `[a1, a2, a3]`:
 Q(a_other) ∝ softmax(-gamma * G_other(a_other))
 ```
 
-Where `G_other` is computed from the other's perspective using their goal and their preferences.
-This allows predicting that the other may yield laterally (not just push toward goal).
+Where `G_other` is computed from the other's perspective using their goal and preferences,
+**including blocked-motion mixing** (so the other can't "ghost" through you in the rollout).
 
 **Social EFE**: For each of our first actions `a`:
 ```
 G_social(policy) = G_self(policy) + alpha * G_other_best_response(first_action)
 ```
-Where `G_other_best_response = min_a' G_other(a')` given our predicted next position.
+Where `G_other_best_response = min over 5^3 policies of G_other`, with blocked-motion,
+given our predicted next position. All JIT-compiled via JAX vmap.
 
-### Bayesian Role Inference
+### Bayesian Role Inference (Fix D)
 
 Each `plan()` call:
 1. Observe other's actual motion `Δ(x,y)` → classify as {forward, backward, lateral, still}
-2. Bayesian update: `q(role | o) ∝ A_motion[o, :] * q(role)`
+2. Bayesian update: `q(role | o) ∝ A_motion[o, :]^confidence * q(role)`
 3. Propagate: `q(role) = B_role @ q(role)`
 
-This makes epistemic value meaningful — actions that disambiguate the other's role
-reduce future uncertainty and thus have lower EFE.
+**confidence** is attenuated during near-contact (0.2 in danger zone, 0.5 in caution,
+1.0 when far). This prevents confounded evidence: during physical contact, displacement
+is caused by collision physics, not the other's intended policy.
 
 ### JAX Parallelization
 
+All computation is JIT-compiled:
 ```
-vmap(125 policies) → lax.scan(3 horizon steps) → vmap(5 other actions for ToM)
+Self EFE:   vmap(3125 policies) → lax.scan(5 horizon steps)
+Social EFE: vmap(5 our actions) → vmap(125 other policies) → lax.scan(3 steps)
 ```
-Estimated: ~15-40ms after JIT warmup (well within 200ms budget).
+GPU-ready: all matrices are `jnp.array`, functions decorated with `@jax.jit`.
 
 Reference patterns from `tom/planning/jax_si_empathy_lava.py`.
 
@@ -330,51 +353,94 @@ No changes needed to `tiago_empathic.py` controller — same interface preserved
 **Idea**: If the robot was backing up last step, give 5% bonus to continue backing up.
 **Why Removed**: Same problem - hardcoding yielding behavior.
 
-### Current State (Proper Active Inference EFE — v2)
+### Current State (Proper Active Inference EFE — v3, blocked-motion)
 
-The planner was **fully rewritten** to use a proper discrete generative model.
-See the **Architecture: Proper EFE Planner** section above for full details.
+The planner was **fully rewritten** and then refined with 4 targeted fixes to address
+why the empathic agent only "half-yields" instead of fully clearing the path.
 
-**Standalone test result** (both robots reach goals in 16 steps):
+**Standalone test result** (both robots reach goals in 18 steps):
 ```
-Steps 1-3:  Both approach (FORWARD), distance narrows 3.6m → 1.2m
-Steps 4-6:  R2 (alpha=6.0) yields (BACK) while R1 (alpha=0.0) advances (FORWARD)
-Steps 7-9:  R1 reaches goal
-Steps 10-16: R2 advances to its goal unobstructed
+Steps 1-2:  Both approach (FORWARD), distance narrows 3.6m → 2.0m
+Steps 3-4:  R2 (alpha=6.0) yields (BACK) to wall while R1 advances
+Steps 5-8:  R1 pushes through (caution zone, no blocking)
+Step  9:    R1 reaches goal
+Steps 10-18: R2 heads to its goal unobstructed
 ```
 
-**What the rewrite fixes** (all root causes from v1):
-- **Epistemic value** → lateral probe actions now have information gain (reduce uncertainty about other's role)
-- **Soft collision avoidance** via `C_risk = [0, 0, -6]` instead of hard clamp
-- **ToM via softmax(-γG)** → predicts other may yield laterally, not just push on X axis
-- **Bayesian role inference** → accumulates evidence about other's intent over time
-- **Sophisticated inference** (depth=3) → can see that committing to a lane is better than oscillating
-- **5 Y bins** (was 3) → finer lateral resolution enables passing maneuvers
-- **2-step social EFE** → deeper lookahead for coordination benefits
+#### The 4 Fixes (all consistent with pure ToM+EFE)
 
-**Old root cause (now resolved)**: UP/DOWN symmetry was caused by:
-1. Fake EFE (distance²/2σ²) couldn't distinguish lateral exploration value
-2. Greedy-x prediction assumed other stays on Y=0
-3. No multi-step planning to see commitment advantages
-4. 3 Y bins with 0.70m collision distance made lateral passing geometrically impossible
+**Fix A: Blocked-motion in transitions** (the critical one)
+- Problem: self and other positions evolved independently ("ghosting") — the other's
+  simulated dynamics did not reflect being blocked, so G_other was not harmed by
+  you being "in the way", so empathy couldn't value clearing space.
+- Fix: after computing raw transitions, mix with "stuck" proportional to p(danger).
+  Now pushing through congestion predicts no progress + danger → high G_other.
+- This encodes physics into the generative model, not a yield rule.
 
-**New mechanism**: Epistemic value + role inference + multi-step rollout breaks symmetry naturally.
-When the robot observes the other moving laterally, it updates `q(role)` toward YIELD_L/YIELD_R,
-which shifts predicted future positions asymmetrically, making one lateral direction preferred.
+**Fix B: Danger penalty scaled to compete with goal utility**
+- Problem: goal utility was +80 and danger was only -6. ToM would rationally accept
+  danger to achieve the goal, so empathy said "fine, let them push through".
+- Fix: `C_risk = [0, -2, -25]`. Danger at -25 competes with goal gradient (-3/step).
+
+**Fix C: Horizon increased to 5 steps (3125 policies)**
+- Problem: with horizon 3, the planner couldn't see a full pass-by maneuver (needs
+  5-8 steps: pull aside, wait, re-enter). It picked the best local move: back a bit.
+- Fix: depth=5 (3125 policies), still fast with JAX vmap + lax.scan.
+
+**Fix D: Attenuated belief update during contact**
+- Problem: during physical contact, displacement is confounded by collision physics,
+  not the other's intended policy. This caused incorrect role inference (e.g., inferring
+  "PUSH" when the other was actually trying to yield but got bumped forward).
+- Fix: `confidence` parameter attenuated to 0.2 in danger zone, 0.5 in caution.
+  Uses tempered likelihood: `P(o|role)^confidence`.
+
+#### What Remains: "Get Out of the Way" Problem
+
+The empathic agent currently yields by backing straight up along the centerline. This
+creates space but doesn't create a **passing lane**. The agent should identify a
+**clearance position** — a location where it won't block the other's path — and move
+there. This position depends on the geometry and should be reidentified each step.
+
+**What the planner needs to solve this**:
+The agent must predict: "where should I be such that the other agent's predicted EFE
+is minimized?" This is already encoded in the social EFE term, but currently the
+empathic agent picks BACK because:
+1. BACK creates distance (reduces danger/caution for the other)
+2. Lateral moves cost manhattan distance to own goal without enough social payoff
+3. The social EFE only evaluates the other's response to our FIRST action, not our
+   full trajectory
+
+**Possible approaches (still pure ToM+EFE)**:
+1. Evaluate social EFE over full policy trajectory, not just first action
+2. Add macro-actions: PULL_ASIDE_LEFT = [LEFT, LEFT, STAY], etc.
+3. Precompute "clearance map": for each of our positions, what is the other's best G?
+   Then add preference for clearance positions to C_self when alpha > 0
 
 ---
 
 ## Future Work
 
+### Done
 - [x] ~~Investigate why EFE doesn't differentiate UP vs DOWN (symmetry breaking)~~ → Solved by epistemic value + role inference
 - [x] ~~Model other robot's lateral movement in ToM prediction~~ → Solved by softmax(-γG) ToM with role-based predictions
-- [ ] Test if corridor is actually wide enough for passing (1.0m corridor, 0.7m collision threshold)
-- [ ] Validate proper EFE planner in Webots (tiago_empathic_test.wbt) — verify robots coordinate without deadlock
+- [x] ~~Blocked-motion in transitions~~ → Fix A: congested transitions predict stuck futures
+- [x] ~~Scale danger to compete with goal utility~~ → Fix B: C_risk = [0, -2, -25]
+- [x] ~~Increase planning horizon~~ → Fix C: depth=5 (3125 policies)
+- [x] ~~Fix ToM evidence during contact~~ → Fix D: attenuated belief update
+
+### In Progress
+- [ ] **"Get out of the way" yielding** — empathic agent should identify a clearance
+      position (back + lateral) rather than just backing up on centerline. The social
+      EFE should evaluate over the full policy trajectory so lateral maneuvers are valued.
+- [ ] **Validate in Webots** (tiago_empathic_test.wbt) — verify robots coordinate
+
+### To Do
+- [ ] Install `jax[cuda]` for GPU acceleration (currently CPU-only)
+- [ ] Profile JIT warmup vs steady-state timing; ensure < 200ms per plan() call
 - [ ] Tune hyperparameters: epistemic_scale, gamma, C_risk values, depth
 - [ ] Add more robots (n-agent coordination)
 - [ ] Dynamic alpha adjustment based on urgency
 - [ ] Integrate with original JAX Active Inference models (tom/planning/jax_si_empathy_lava.py)
 - [ ] Add obstacle avoidance for dynamic obstacles
 - [ ] Visualize EFE landscape in real-time
-- [ ] Profile JAX JIT warmup time and optimize if needed
 - [ ] Investigate stochastic policy selection (softmax over G_social) vs argmin

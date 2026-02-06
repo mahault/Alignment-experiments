@@ -6,6 +6,7 @@ Based on Sophisticated Inference (Friston et al. 2020) and ToM extension (2508.0
 - EFE = Pragmatic (preference satisfaction) + Epistemic (information gain about other's role)
 - ToM: Q(a_other) proportional to softmax(-gamma * G_other), not greedy-x
 - Collision avoidance via preferences C, not hard clamps
+- Blocked-motion mixing: congested transitions predict "stuck" futures
 - Bayesian belief update over other agent's hidden role/intent
 
 G_social = G_self + alpha * G_other
@@ -29,9 +30,9 @@ from jax import lax
 # Corridor geometry
 X_MIN, X_MAX = -2.2, 2.2
 Y_MIN, Y_MAX = -0.5, 0.5
-ROBOT_RADIUS = 0.30
-COLLISION_DIST = 2 * ROBOT_RADIUS  # 0.6m
-CAUTION_DIST = 1.0  # meters
+ROBOT_RADIUS = 0.25
+COLLISION_DIST = 2 * ROBOT_RADIUS  # 0.5m — physical contact
+CAUTION_DIST = 0.8  # meters — uncomfortably close
 
 # X: 11 bins at 0.4m resolution
 N_X = 11
@@ -147,7 +148,7 @@ class CorridorModel:
         self.B_role = self._build_B_role()
 
         self.C_self = self._build_C_self(goal_x, goal_y)
-        self.C_risk = np.array([0.0, 0.0, -6.0])
+        self.C_risk = np.array([0.0, 0.0, -25.0])  # Only danger matters, not caution
         self.C_motion = np.zeros(N_MOTION)
 
         self.D_role = np.array([0.4, 0.2, 0.2, 0.2])
@@ -255,7 +256,7 @@ class CorridorModel:
                 C[s] = 80.0
             else:
                 manhattan = abs(x - gx) + abs(y - gy)
-                C[s] = -3.0 * manhattan - 0.1
+                C[s] = -5.0 * manhattan - 0.1
         return C
 
 
@@ -268,74 +269,7 @@ def _entropy(q):
     return -jnp.sum(q * jnp.log(q + 1e-16))
 
 
-def _compute_one_step_efe(
-    q_self, q_other, q_role, action,
-    B_self, B_other_pose, B_role,
-    A_risk, A_motion,
-    C_self, C_risk,
-    epistemic_scale,
-):
-    """
-    Compute single-step EFE for one action.
-
-    Returns (G_step, q_self_next, q_other_next, q_role_next).
-
-    EFE = G_pragmatic + G_epistemic
-
-    G_pragmatic = -(C_self . q(s_self'))               [location utility]
-                  -(C_risk . P(o_risk | s_self', s_other'))  [clearance utility]
-
-    G_epistemic = -scale * [H(q(role')) - E_o[H(q(role'|o))]]  [info gain about role]
-    """
-    # 1. Transition beliefs
-    q_self_next = B_self[:, :, action] @ q_self
-    # Other: marginalize over role
-    # q_other_next = sum_role q_role[role] * B_other_pose[:, :, role] @ q_other
-    q_other_next = jnp.einsum('ij,j,k->i',
-                               jnp.einsum('ijk,k->ij', B_other_pose, q_role),
-                               q_other, jnp.ones(1))[..., None].squeeze(-1)
-    # More explicitly:
-    q_other_next = jnp.zeros(N_POSE)
-    for r in range(N_ROLES):
-        q_other_next = q_other_next + q_role[r] * (B_other_pose[:, :, r] @ q_other)
-
-    q_role_next = B_role @ q_role
-
-    # 2. Pragmatic value
-    # Location utility
-    u_loc = jnp.dot(q_self_next, C_self)
-
-    # Risk utility: P(o_risk | s_self', s_other') = einsum over joint
-    obs_risk = jnp.einsum('oij,i,j->o', A_risk, q_self_next, q_other_next)
-    u_risk = jnp.dot(obs_risk, C_risk)
-
-    G_pragmatic = -(u_loc + u_risk)
-
-    # 3. Epistemic value: info gain about role
-    H_prior = _entropy(q_role_next)
-
-    # Expected observation distribution
-    obs_motion = A_motion @ q_role_next  # P(o_motion) = sum_role P(o|role) * q(role)
-
-    # Posterior entropy for each possible observation
-    def _posterior_entropy(o_idx):
-        likelihood = A_motion[o_idx, :]
-        post_unnorm = likelihood * q_role_next
-        Z = jnp.sum(post_unnorm) + 1e-16
-        post = post_unnorm / Z
-        return _entropy(post)
-
-    H_posteriors = jax.vmap(_posterior_entropy)(jnp.arange(N_MOTION))
-    H_post_expected = jnp.dot(obs_motion, H_posteriors)
-    info_gain = H_prior - H_post_expected
-
-    G_epistemic = -epistemic_scale * info_gain
-
-    return G_pragmatic + G_epistemic, q_self_next, q_other_next, q_role_next
-
-
-# We can't easily vmap the role loop above, so let's rewrite the other transition
-# as a proper matrix multiply for JAX compatibility.
+# Marginalized other transition for JAX compatibility.
 def _transition_other_marginalized(q_other, q_role, B_other_pose):
     """Compute q(s_other') marginalized over role. JAX-friendly."""
     # B_other_pose: (N_POSE, N_POSE, N_ROLES)
@@ -353,22 +287,39 @@ def _compute_step_efe_jax(
     C_self, C_risk,
     epistemic_scale,
 ):
-    """JAX-compatible single-step EFE. Returns (G_step, q_self', q_other', q_role')."""
-    # Transitions
-    q_self_next = B_self[:, :, action] @ q_self
-    q_other_next = _transition_other_marginalized(q_other, q_role, B_other_pose)
+    """JAX-compatible single-step EFE. Returns (G_step, q_self', q_other', q_role').
+
+    Key: blocked-motion mixing. After computing raw transitions, we check
+    p(danger) from the joint next-state. If high, both agents get "stuck" —
+    their next-state mixes back toward current state proportional to p_danger.
+    This makes the generative model predict that pushing through congestion
+    leads to no progress + danger, so ToM correctly values clearing space.
+    """
+    # 1. Raw transitions (before physics/blocking)
+    q_self_next_raw = B_self[:, :, action] @ q_self
+    q_other_next_raw = _transition_other_marginalized(q_other, q_role, B_other_pose)
     q_role_next = B_role @ q_role
 
-    # Pragmatic: location
+    # 2. Blocked-motion mixing: compute p(danger) from raw next states
+    #    Only DANGER (contact) causes blocking, not caution (proximity).
+    obs_risk_raw = jnp.einsum('oij,i,j->o', A_risk, q_self_next_raw, q_other_next_raw)
+    p_danger = obs_risk_raw[2]
+    p_block = jnp.clip(p_danger * 0.9, 0.0, 0.95)
+
+    # Mix next-state with "stuck at current state" proportional to blockage
+    q_self_next = (1.0 - p_block) * q_self_next_raw + p_block * q_self
+    q_other_next = (1.0 - p_block) * q_other_next_raw + p_block * q_other
+
+    # 3. Pragmatic: location utility (using blocked-aware next states)
     u_loc = jnp.dot(q_self_next, C_self)
 
-    # Pragmatic: risk
+    # Pragmatic: risk (recompute with blocked-aware states)
     obs_risk = jnp.einsum('oij,i,j->o', A_risk, q_self_next, q_other_next)
     u_risk = jnp.dot(obs_risk, C_risk)
 
     G_prag = -(u_loc + u_risk)
 
-    # Epistemic: info gain about role
+    # 4. Epistemic: info gain about role
     H_prior = _entropy(q_role_next)
     obs_motion = A_motion @ q_role_next
 
@@ -415,73 +366,117 @@ def _rollout_policy_jax(
 
 
 # ============================================================================
-# ToM: Predict other agent's action
+# ToM: Predict other agent's action (JAX JIT)
 # ============================================================================
 
-def predict_other_action_tom(
-    q_other, q_self, other_model, other_alpha, gamma=8.0,
-):
+def _other_single_step_efe_jax(q_other, q_us, action, B_other, A_risk, C_self, C_risk):
+    """Single-step EFE from other's perspective with blocked-motion mixing."""
+    q_o_next_raw = B_other[:, :, action] @ q_other
+
+    # Blocked-motion: other gets stuck if pushing into contact
+    obs_risk = jnp.einsum('oij,i,j->o', A_risk, q_o_next_raw, q_us)
+    p_danger = obs_risk[2]
+    p_block = jnp.clip(p_danger * 0.9, 0.0, 0.95)
+
+    q_o_next = (1.0 - p_block) * q_o_next_raw + p_block * q_other
+
+    u_loc = jnp.dot(q_o_next, C_self)
+    obs_risk_final = jnp.einsum('oij,i,j->o', A_risk, q_o_next, q_us)
+    u_risk = jnp.dot(obs_risk_final, C_risk)
+
+    G = -(u_loc + u_risk)
+    return G, q_o_next
+
+
+def _other_rollout_policy_jax(policy, q_other, q_us, B_other, A_risk, C_self, C_risk, discount):
+    """Roll out a policy from the other's perspective with blocked-motion."""
+    def step_fn(carry, action):
+        q_o, total_G, disc = carry
+        G_step, q_o_next = _other_single_step_efe_jax(
+            q_o, q_us, action, B_other, A_risk, C_self, C_risk
+        )
+        total_G = total_G + disc * G_step
+        disc = disc * discount
+        return (q_o_next, total_G, disc), None
+
+    init = (q_other, 0.0, 1.0)
+    (_, total_G, _), _ = lax.scan(step_fn, init, policy)
+    return total_G
+
+
+def _build_full_trajectory_social_jit(other_model, B_self_ours, A_risk_ours, depth_other=3, discount=0.9):
+    """Build JIT-compiled function that computes social EFE at EVERY step of
+    our policy rollout (sophisticated inference), not just the end state.
+
+    At each step t of our 5-step policy, we compute the other's best-response
+    G given our position at step t, and accumulate discounted social cost:
+        G_social(policy) = sum_t discount^t * G_other_best_response(our_pos_t)
+
+    CRITICAL: includes blocked-motion mixing in the social rollout. Without it,
+    policies that walk THROUGH the other agent appear falsely good because the
+    rollout fantasizes about reaching far-away positions with great social scores.
+    With blocking, if step 1 enters the other agent's position, we get stuck
+    there for all remaining steps — making FORWARD-through-danger correctly bad.
+
+    Efficient: precompute G_other for all 55 positions once (55 x 125 = 6,875
+    evaluations), then for each of our 3125 policies, roll out with blocking
+    and look up the precomputed G_other at each step (3125 x 5 dot products).
     """
-    Theory of Mind: predict other's action distribution.
+    all_other_policies = jnp.array(
+        list(itertools.product(range(N_ACTIONS), repeat=depth_other)),
+        dtype=jnp.int32
+    )
 
-    Q(a_other) proportional to softmax(-gamma * G_other(a_other))
+    jB_other = jnp.array(other_model.B_self)
+    jA_risk_other = jnp.array(other_model.A_risk)
+    jC_other = jnp.array(other_model.C_self)
+    jC_risk = jnp.array(other_model.C_risk)
+    jB_self = jnp.array(B_self_ours)
+    jA_risk_self = jnp.array(A_risk_ours)
+    discount_val = discount
 
-    G_other is computed from the other's perspective using their goal/preferences.
-    """
-    # Build other's EFE for each of their 5 actions
-    G_others = np.zeros(N_ACTIONS)
+    @jax.jit
+    def compute_social_all_policies(q_self_init, q_other, all_our_policies):
+        # 1. Precompute: other's best-response G from each of 55 possible positions
+        def other_best_from_pos(us_idx):
+            q_us = jnp.zeros(N_POSE).at[us_idx].set(1.0)
+            def single_rollout(policy):
+                return _other_rollout_policy_jax(
+                    policy, q_other, q_us,
+                    jB_other, jA_risk_other, jC_other, jC_risk, discount_val,
+                )
+            all_G = jax.vmap(single_rollout)(all_other_policies)
+            return jnp.min(all_G)
 
-    # From other's perspective: they are "self", we are "other"
-    # Use a uniform role prior for their prediction of us
-    uniform_role = np.ones(N_ROLES) / N_ROLES
+        G_other_by_pos = jax.vmap(other_best_from_pos)(jnp.arange(N_POSE))  # (55,)
 
-    for a in range(N_ACTIONS):
-        # Other's next state given their action a
-        q_other_next = other_model.B_self[:, :, a] @ q_other
+        # 2. For each policy, roll out step by step with blocked-motion mixing
+        def rollout_social(policy):
+            def step(carry, action):
+                q_self, total_G, disc = carry
+                q_self_next_raw = jB_self[:, :, action] @ q_self
 
-        # Location utility (from their preferences)
-        u_loc = np.dot(q_other_next, other_model.C_self)
+                # Blocked-motion: can't walk through the other agent
+                obs_risk = jnp.einsum('oij,i,j->o', jA_risk_self, q_self_next_raw, q_other)
+                p_danger = obs_risk[2]
+                p_block = jnp.clip(p_danger * 0.9, 0.0, 0.95)
+                q_self_next = (1.0 - p_block) * q_self_next_raw + p_block * q_self
 
-        # Risk utility (from their perspective)
-        obs_risk = np.einsum('oij,i,j->o', other_model.A_risk, q_other_next, q_self)
-        u_risk = np.dot(obs_risk, other_model.C_risk)
+                # Social cost at this step = other's best response from our position
+                G_step = jnp.dot(q_self_next, G_other_by_pos)
+                total_G = total_G + disc * G_step
+                disc = disc * discount_val
+                return (q_self_next, total_G, disc), None
 
-        G_others[a] = -(u_loc + u_risk)
+            init = (q_self_init, 0.0, 1.0)
+            (_, total_G, _), _ = lax.scan(step, init, policy)
+            return total_G
 
-    # Softmax action selection
-    log_q = -gamma * G_others
-    log_q -= log_q.max()
-    q_a = np.exp(log_q)
-    q_a /= q_a.sum()
+        G_social = jax.vmap(rollout_social)(all_our_policies)  # (3125,)
 
-    return q_a
+        return G_social
 
-
-def compute_other_best_response_G(
-    q_self_next, q_other, other_model, other_alpha, depth=2,
-):
-    """
-    Compute the other agent's best-response EFE given our predicted next position.
-
-    Uses multi-step lookahead: tries all action sequences of given depth,
-    returns min total G — the best EFE the other can achieve.
-    """
-    best_G = float('inf')
-    for policy in itertools.product(range(N_ACTIONS), repeat=depth):
-        q_o = q_other.copy()
-        total_G = 0.0
-        discount = 1.0
-        for a in policy:
-            q_o_next = other_model.B_self[:, :, a] @ q_o
-            u_loc = np.dot(q_o_next, other_model.C_self)
-            obs_risk = np.einsum('oij,i,j->o', other_model.A_risk, q_o_next, q_self_next)
-            u_risk = np.dot(obs_risk, other_model.C_risk)
-            total_G += discount * (-(u_loc + u_risk))
-            discount *= 0.95
-            q_o = q_o_next
-        if total_G < best_G:
-            best_G = total_G
-    return best_G
+    return compute_social_all_policies
 
 
 # ============================================================================
@@ -502,10 +497,17 @@ def classify_motion(dx, dy, other_goal_x, other_x):
         return 2  # lateral
 
 
-def update_role_belief(q_role, motion_obs_idx, A_motion):
-    """Bayesian update: q(role | o) proportional to P(o | role) * q(role)."""
+def update_role_belief(q_role, motion_obs_idx, A_motion, confidence=1.0):
+    """Bayesian update: q(role | o) proportional to P(o | role)^confidence * q(role).
+
+    confidence < 1.0 attenuates the update (used during contact when
+    displacement is confounded by physics and not a reliable indicator
+    of the other agent's intended policy).
+    """
     likelihood = A_motion[motion_obs_idx, :]
-    posterior_unnorm = likelihood * q_role
+    # Raise likelihood to confidence power: 1.0 = full update, 0.0 = no update
+    tempered_likelihood = np.power(likelihood, confidence)
+    posterior_unnorm = tempered_likelihood * q_role
     Z = posterior_unnorm.sum()
     if Z > 1e-16:
         return posterior_unnorm / Z
@@ -536,10 +538,10 @@ class ToMPlanner:
         self.alpha = alpha
 
         # Planning parameters
-        self.depth = 3              # Sophisticated inference depth
+        self.depth = 5              # Sophisticated inference depth (5^5=3125 policies)
         self.gamma = 8.0            # Inverse temperature for softmax action selection
         self.epistemic_scale = 1.0  # Weight on epistemic term
-        self.discount = 0.95        # Future EFE discount
+        self.discount = 0.9         # Future EFE discount
         self.goal_tolerance = 0.3
 
         # Build own generative model (lazily build other's model on first call)
@@ -558,8 +560,9 @@ class ToMPlanner:
         )
         self.jall_policies = jnp.array(self.all_policies)
 
-        # JIT-compiled rollout (built lazily on first use)
+        # JIT-compiled functions (built lazily on first use)
         self._jit_rollout_all = None
+        self._jit_social_full_traj = {}  # keyed by other goal
 
         # Debug/logging
         self.verbose = True
@@ -669,11 +672,28 @@ class ToMPlanner:
             dx = other_x - self.prev_other_x
             dy = other_y - self.prev_other_y
             motion_obs = classify_motion(dx, dy, other_goal_x, self.prev_other_x)
+
+            # Fix D: attenuate belief update during contact — displacement
+            # is confounded by physics (pushing/bumping), not a reliable
+            # indicator of the other's intended policy.
+            dist_to_other = distance(my_x, my_y, other_x, other_y)
+            if dist_to_other < COLLISION_DIST * 1.5:
+                confidence = 0.2  # heavily attenuated during near-contact
+            elif dist_to_other < CAUTION_DIST:
+                confidence = 0.5  # moderately attenuated in caution zone
+            else:
+                confidence = 1.0  # full update when far apart
+
             self.q_role = update_role_belief(
-                self.q_role, motion_obs, self.model.A_motion
+                self.q_role, motion_obs, self.model.A_motion, confidence
             )
             # Propagate role forward in time
             self.q_role = self.model.B_role @ self.q_role
+            # Entropy floor: prevent role belief from collapsing to a single
+            # role (e.g. WAIT) which creates self-fulfilling deadlock where
+            # both agents predict the other will stay and neither moves.
+            uniform = np.array([0.25, 0.25, 0.25, 0.25])
+            self.q_role = 0.85 * self.q_role + 0.15 * uniform
 
         self.prev_other_x = other_x
         self.prev_other_y = other_y
@@ -685,25 +705,27 @@ class ToMPlanner:
         # 3. Compute self EFE for all policies
         G_self_all = self._compute_all_efe(q_self, q_other, self.q_role)
 
-        # 4. Compute social EFE term
+        # 4. Compute social EFE term (JIT-compiled on GPU)
         other_model = self._get_other_model(other_goal_x, other_goal_y)
 
-        # For each first action, compute G_other (other's best response)
         G_social_all = np.copy(G_self_all)
         if self.alpha > 0.001:
-            # Compute other's best-response EFE for each of our first actions
-            G_other_per_first_action = np.zeros(N_ACTIONS)
-            for a in range(N_ACTIONS):
-                # Our predicted next state
-                q_self_next_a = self.model.B_self[:, :, a] @ q_self
-                G_other_per_first_action[a] = compute_other_best_response_G(
-                    q_self_next_a, q_other, other_model, other_alpha
-                )
+            # Get or build JIT-compiled full-trajectory social EFE function
+            other_key = (round(other_goal_x, 1), round(other_goal_y, 1))
+            if other_key not in self._jit_social_full_traj:
+                self._jit_social_full_traj[other_key] = \
+                    _build_full_trajectory_social_jit(
+                        other_model, self.model.B_self, self.model.A_risk,
+                        depth_other=3, discount=self.discount
+                    )
+            jit_social = self._jit_social_full_traj[other_key]
 
-            # Add alpha-weighted other EFE to each policy based on its first action
-            for i, policy in enumerate(self.all_policies):
-                first_a = policy[0]
-                G_social_all[i] += self.alpha * G_other_per_first_action[first_a]
+            # Compute social EFE for all 3125 policies based on full trajectory end state
+            G_other_all = np.array(jit_social(
+                jnp.array(q_self), jnp.array(q_other), self.jall_policies
+            ))
+
+            G_social_all += self.alpha * G_other_all
 
         # 5. Select best policy
         best_idx = int(np.argmin(G_social_all))
