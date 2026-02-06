@@ -1,0 +1,251 @@
+#VRML_SIM R2025a utf8
+# WebotsAcrome with Distance Sensors for Obstacle Detection
+
+PROTO WebotsAcrome [
+  field SFVec3f     translation              0 0 0
+  field SFRotation  rotation                 0 0 1 0
+  field SFString    name                     "WebotsAcrome"
+  field SFString    controller               "void"
+  field MFString    controllerArgs           [""]
+  field SFString    customData               ""
+  field SFBool      supervisor               FALSE
+  field SFBool      synchronization          TRUE
+  field SFBool      selfCollision            FALSE
+  field MFNode      extensionSlot            []
+]
+{
+  Robot {
+    translation     IS translation
+    rotation        IS rotation
+    controller      IS controller
+    controllerArgs  IS controllerArgs
+    customData      IS customData
+    supervisor      IS supervisor
+    synchronization IS synchronization
+    name            IS name
+    selfCollision   IS selfCollision
+    
+    children [
+      DEF BODY Pose {
+        translation 0 0 -0.05
+        children [
+          Group {
+            children IS extensionSlot
+          }
+        ]
+      }
+      
+      # Main body (simple box)
+      Shape {
+        appearance PBRAppearance {
+          baseColor 0.2 0.2 0.2
+          metalness 0.3
+          roughness 0.7
+        }
+        geometry Box {
+          size 0.25 0.15 0.06
+        }
+      }
+      
+      # Left wheel
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis           -1 0 0
+          anchor         -0.14277 -0.00006 -0.01126
+          dampingConstant 0.1
+          staticFriction  0.1
+        }
+        device [
+          RotationalMotor {
+            name       "leftwheel"
+            maxVelocity 10.0
+            maxTorque   10.0
+          }
+          PositionSensor {
+            name "leftwheel_sensor"
+          }
+        ]
+        endPoint Solid {
+          translation -0.14277 -0.00006 -0.01126
+          rotation 0 1 0 1.5708
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.1 0.1 0.1
+                metalness 0.5
+                roughness 0.3
+              }
+              geometry Cylinder {
+                radius 0.037
+                height 0.02
+              }
+            }
+          ]
+          name "left_wheel"
+          boundingObject Cylinder {
+            radius 0.037
+            height 0.02
+          }
+          physics Physics {
+            density -1
+            mass 0.03117
+          }
+        }
+      }
+
+      # Right wheel
+      HingeJoint {
+        jointParameters HingeJointParameters {
+          axis            -1 0 0     
+          anchor          0.14277 -0.00006 -0.01126
+          dampingConstant 0.1
+          staticFriction  0.1
+        }
+        device [
+          RotationalMotor {
+            name       "rightwheel"
+            maxVelocity 10.0
+            maxTorque   10.0
+          }
+          PositionSensor {
+            name "rightwheel_sensor"
+          }
+        ]
+        endPoint Solid {
+          translation 0.14277 -0.00006 -0.01126
+          rotation 0 1 0 1.5708
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.1 0.1 0.1
+                metalness 0.5
+                roughness 0.3
+              }
+              geometry Cylinder {
+                radius 0.037
+                height 0.02
+              }
+            }
+          ]
+          name "right_wheel"
+          boundingObject Cylinder {
+            radius 0.037
+            height 0.02
+          }
+          physics Physics {
+            density -1
+            mass 0.03117
+          }
+        }
+      }
+
+      # Distance Sensors - 5 sensors for comprehensive coverage
+      # Front center
+      DistanceSensor {
+        translation 0.1 0 0
+        rotation 0 0 1 0
+        name "ds_front"
+        lookupTable [
+          0 0 0
+          0.5 500 0
+        ]
+        type "infra-red"
+      }
+      
+      # Front left
+      DistanceSensor {
+        translation 0.08 0.06 0
+        rotation 0 0 1 0.5
+        name "ds_front_left"
+        lookupTable [
+          0 0 0
+          0.5 500 0
+        ]
+        type "infra-red"
+      }
+      
+      # Front right
+      DistanceSensor {
+        translation 0.08 -0.06 0
+        rotation 0 0 1 -0.5
+        name "ds_front_right"
+        lookupTable [
+          0 0 0
+          0.5 500 0
+        ]
+        type "infra-red"
+      }
+      
+      # Left side
+      DistanceSensor {
+        translation 0 0.08 0
+        rotation 0 0 1 1.5708
+        name "ds_left"
+        lookupTable [
+          0 0 0
+          0.3 300 0
+        ]
+        type "infra-red"
+      }
+      
+      # Right side
+      DistanceSensor {
+        translation 0 -0.08 0
+        rotation 0 0 1 -1.5708
+        name "ds_right"
+        lookupTable [
+          0 0 0
+          0.3 300 0
+        ]
+        type "infra-red"
+      }
+
+      # Camera
+      Camera {
+        name        "camera"
+        translation 0 0.1 0.02
+        rotation    0 0 1 1.5708
+        width       640
+        height      480
+        fieldOfView 1.0
+        near        0.01
+        far         10
+      }
+
+      # GPS and IMU
+      GPS {
+        name        "gps"
+        translation 0 0 0.05
+      }
+      InertialUnit {
+        name        "imu"
+        translation 0 0 0.05
+      }
+
+      # Communication devices for multi-agent coordination
+      Emitter {
+        name "emitter"
+        channel 1
+        range 10
+      }
+      Receiver {
+        name "receiver"
+        channel 1
+      }
+    ]
+    
+    boundingObject Box {
+      size 0.3 0.2 0.09
+    }
+
+    physics Physics {
+      density       -1
+      mass           0.362985
+      centerOfMass   [ 0.004818 0.018225 0.000192 ]
+      inertiaMatrix [
+        1.925964e-04 6.266578e-04 7.893956e-04
+        -5.933443e-08 -7.429332e-09 -2.072041e-09
+      ]
+    }
+  }
+}
