@@ -103,7 +103,22 @@ class TiagoEmpathicNavigator:
         self.left_motor.setVelocity(0.0)
         self.right_motor.setVelocity(0.0)
 
-        print(f"{self.name}: Motors initialized")
+        # Tuck arm close to body so it doesn't stick out
+        arm_tucked = {
+            'arm_1_joint': 0.07,
+            'arm_2_joint': 1.02,
+            'arm_3_joint': -3.16,
+            'arm_4_joint': 2.02,
+            'arm_5_joint': 1.32,
+            'arm_6_joint': 0.0,
+            'arm_7_joint': 1.41,
+        }
+        for joint_name, pos in arm_tucked.items():
+            joint = self.robot.getDevice(joint_name)
+            if joint:
+                joint.setPosition(pos)
+
+        print(f"{self.name}: Motors initialized, arm tucked")
 
     def _find_other_robot(self):
         """Find the other TIAGo robot and extract its alpha."""
@@ -208,13 +223,21 @@ class TiagoEmpathicNavigator:
         angular = self.Kp_heading * heading_error
         angular = max(-self.max_angular_speed, min(self.max_angular_speed, angular))
 
-        # Compute linear velocity (reduce when turning)
-        alignment = max(0.2, math.cos(heading_error))
-        linear = self.max_linear_speed * alignment
+        # Two-phase motor primitive: rotate in place first if heading
+        # error is large, then translate once aligned. This prevents the
+        # "spin + creep" behavior that makes lateral moves fail near
+        # boundaries — the robot actually commits to the rotation before
+        # moving, producing decisive lateral displacement.
+        if abs(heading_error) > math.radians(15):
+            linear = 0.0  # Pure rotation until aligned
+        else:
+            # Compute linear velocity (reduce when turning)
+            alignment = max(0.2, math.cos(heading_error))
+            linear = self.max_linear_speed * alignment
 
-        # Slow down near target
-        if distance < 0.5:
-            linear *= distance / 0.5
+            # Slow down near target
+            if distance < 0.5:
+                linear *= distance / 0.5
 
         # If driving backward, negate linear velocity
         if drive_backward:

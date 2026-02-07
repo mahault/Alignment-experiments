@@ -27,25 +27,41 @@ from jax import lax
 # Constants: Discretization
 # ============================================================================
 
-# Corridor geometry
+# Arena geometry: 5m x 2m floor with hazard obstacles forming a narrow corridor
+# The corridor is narrow in the MIDDLE (|X| < 1.0) but opens up at the ENDS
+# where hazards are absent — this is where the empathic agent can yield.
 X_MIN, X_MAX = -2.2, 2.2
-Y_MIN, Y_MAX = -0.5, 0.5
+Y_MIN, Y_MAX = -1.0, 1.0   # Full arena width — not just the corridor
 ROBOT_RADIUS = 0.25
 COLLISION_DIST = 2 * ROBOT_RADIUS  # 0.5m — physical contact
-CAUTION_DIST = 0.8  # meters — uncomfortably close
+CAUTION_DIST = 0.90  # meters — slightly larger to catch more near-misses
+
+# Hazard obstacle definitions from the world file (tiago_empathic_test.wbt)
+# Each tuple: (x_center, y_center, x_half_size, y_half_size)
+# Top row: only 2 hazards near center — open at |X| > 0.8
+# Bottom row: 4 hazards spanning most of the corridor — nearly continuous wall
+HAZARDS = [
+    (-0.5, 0.75, 0.3, 0.25),   # hazard_top_1
+    (0.5, 0.75, 0.3, 0.25),    # hazard_top_2
+    (-1.5, -0.75, 0.3, 0.25),  # hazard_bottom_0
+    (-0.5, -0.75, 0.3, 0.25),  # hazard_bottom_1
+    (0.5, -0.75, 0.3, 0.25),   # hazard_bottom_2
+    (1.5, -0.75, 0.3, 0.25),   # hazard_bottom_3
+]
+HAZARD_MARGIN = ROBOT_RADIUS  # Robot center must stay this far from hazard edges
 
 # X: 11 bins at 0.4m resolution
 N_X = 11
 X_EDGES = np.linspace(X_MIN, X_MAX, N_X + 1)
 X_CENTERS = 0.5 * (X_EDGES[:-1] + X_EDGES[1:])
 
-# Y: 5 bins for finer lateral resolution (enables lateral passing)
-N_Y = 5
+# Y: 7 bins covering full arena width (resolution ~0.286m)
+N_Y = 7
 Y_EDGES = np.linspace(Y_MIN, Y_MAX, N_Y + 1)
 Y_CENTERS = 0.5 * (Y_EDGES[:-1] + Y_EDGES[1:])
 
 # Total pose states per agent
-N_POSE = N_X * N_Y  # 33
+N_POSE = N_X * N_Y  # 77
 
 # Actions: {STAY, FORWARD, BACK, LEFT, RIGHT}
 N_ACTIONS = 5
@@ -104,6 +120,17 @@ def distance(x1, y1, x2, y2):
     return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
 
+def is_in_hazard(cx: float, cy: float) -> bool:
+    """Check if continuous position (cx, cy) would collide with any hazard obstacle.
+
+    Uses HAZARD_MARGIN (= ROBOT_RADIUS) so the robot center stays clear.
+    """
+    for hx, hy, hsx, hsy in HAZARDS:
+        if abs(cx - hx) < hsx + HAZARD_MARGIN and abs(cy - hy) < hsy + HAZARD_MARGIN:
+            return True
+    return False
+
+
 # ============================================================================
 # CorridorModel: Discrete generative model for the TIAGo corridor
 # ============================================================================
@@ -113,15 +140,19 @@ class CorridorModel:
     Discrete POMDP generative model for corridor navigation.
 
     State factors:
-      - s_self:  33 pose states (11x * 3y)
-      - s_other: 33 pose states
+      - s_self:  77 pose states (11x * 7y, covering full 5x2m arena)
+      - s_other: 77 pose states
       - s_role:  4 hidden role states {PUSH, YIELD_LEFT, YIELD_RIGHT, WAIT}
 
     Observation modalities:
-      - o_self:   33 (identity from s_self)
-      - o_other:  33 (identity from s_other)
+      - o_self:   77 (identity from s_self)
+      - o_other:  77 (identity from s_other)
       - o_risk:   3  {safe, caution, danger} from joint pose geometry
       - o_motion: 4  {forward, backward, lateral, still} from s_role
+
+    C_self includes hazard obstacle positions — bins overlapping hazards get
+    -50 penalty. This gives the planner spatial awareness: the corridor is
+    narrow in the middle but opens up at the ends.
     """
 
     def __init__(self, goal_x: float, goal_y: float,
@@ -245,18 +276,49 @@ class CorridorModel:
         ])
 
     def _build_C_self(self, goal_x: float, goal_y: float) -> np.ndarray:
-        """Preferences over self-position: goal attraction + distance gradient."""
+        """Preferences over self-position: goal + distance gradient + hazards + walls.
+
+        The arena is 5x2m with hazard obstacles forming a narrow corridor in the
+        MIDDLE. At the corridor ENDS (|X| > 1.0), the top side opens up — no
+        hazards block Y > 0.5. The empathic agent can yield into these open areas.
+
+        C encodes:
+        1. Goal attraction: +80 at goal bin, -5*manhattan elsewhere
+        2. Hazard penalty: -50 at bins overlapping hazard obstacles
+        3. X boundary penalty: -20 at corridor ends (avoid getting stuck at x_max)
+        4. Y boundary penalty: -10 at arena walls (avoid clipping Y=±1.0)
+        """
         C = np.zeros(N_POSE)
         gx, gy = xy_to_bin(goal_x, goal_y)
         goal_flat = pose_to_flat(gx, gy)
 
         for s in range(N_POSE):
             x, y = flat_to_pose(s)
+            cx, cy = bin_to_xy(x, y)
+
+            # Goal gradient
             if s == goal_flat:
                 C[s] = 80.0
             else:
                 manhattan = abs(x - gx) + abs(y - gy)
                 C[s] = -5.0 * manhattan - 0.1
+
+            # Hazard penalty: bins overlapping obstacles are strongly penalized
+            if is_in_hazard(cx, cy):
+                C[s] -= 50.0
+
+            # X boundary: discourage corridor ends (robot gets stuck)
+            if x == 0 or x == N_X - 1:
+                C[s] -= 20.0
+            elif x == 1 or x == N_X - 2:
+                C[s] -= 8.0
+
+            # Y boundary: discourage arena wall hugging (robot clips wall)
+            if y == 0 or y == N_Y - 1:
+                C[s] -= 10.0
+            elif y == 1 or y == N_Y - 2:
+                C[s] -= 3.0
+
         return C
 
 
@@ -304,7 +366,7 @@ def _compute_step_efe_jax(
     #    Only DANGER (contact) causes blocking, not caution (proximity).
     obs_risk_raw = jnp.einsum('oij,i,j->o', A_risk, q_self_next_raw, q_other_next_raw)
     p_danger = obs_risk_raw[2]
-    p_block = jnp.clip(p_danger * 0.9, 0.0, 0.95)
+    p_block = jnp.clip(p_danger * 1.5, 0.0, 0.98)
 
     # Mix next-state with "stuck at current state" proportional to blockage
     q_self_next = (1.0 - p_block) * q_self_next_raw + p_block * q_self
@@ -376,7 +438,7 @@ def _other_single_step_efe_jax(q_other, q_us, action, B_other, A_risk, C_self, C
     # Blocked-motion: other gets stuck if pushing into contact
     obs_risk = jnp.einsum('oij,i,j->o', A_risk, q_o_next_raw, q_us)
     p_danger = obs_risk[2]
-    p_block = jnp.clip(p_danger * 0.9, 0.0, 0.95)
+    p_block = jnp.clip(p_danger * 1.5, 0.0, 0.98)
 
     q_o_next = (1.0 - p_block) * q_o_next_raw + p_block * q_other
 
@@ -459,7 +521,7 @@ def _build_full_trajectory_social_jit(other_model, B_self_ours, A_risk_ours, dep
                 # Blocked-motion: can't walk through the other agent
                 obs_risk = jnp.einsum('oij,i,j->o', jA_risk_self, q_self_next_raw, q_other)
                 p_danger = obs_risk[2]
-                p_block = jnp.clip(p_danger * 0.9, 0.0, 0.95)
+                p_block = jnp.clip(p_danger * 1.5, 0.0, 0.98)
                 q_self_next = (1.0 - p_block) * q_self_next_raw + p_block * q_self
 
                 # Social cost at this step = other's best response from our position
@@ -804,12 +866,15 @@ def test_planner():
 def test_discretization():
     """Verify discretization round-trip."""
     print("Testing discretization...")
+    print(f"  X bins: {N_X}, Y bins: {N_Y}, total: {N_POSE}")
+    print(f"  X centers: {[f'{c:.2f}' for c in X_CENTERS]}")
+    print(f"  Y centers: {[f'{c:.2f}' for c in Y_CENTERS]}")
     for x in [-2.2, -1.0, 0.0, 1.0, 2.2]:
-        for y in [-0.5, 0.0, 0.5]:
+        for y in [-1.0, -0.5, 0.0, 0.5, 1.0]:
             bx, by = xy_to_bin(x, y)
             cx, cy = bin_to_xy(bx, by)
             assert abs(cx - x) < 0.4, f"X round-trip failed: {x} -> bin {bx} -> {cx}"
-            assert abs(cy - y) < 0.25, f"Y round-trip failed: {y} -> bin {by} -> {cy}"
+            assert abs(cy - y) < 0.3, f"Y round-trip failed: {y} -> bin {by} -> {cy}"
     print("  Discretization OK")
 
 
@@ -850,6 +915,34 @@ def test_model_matrices():
     print("  Model matrices OK")
 
 
+def test_hazard_map():
+    """Verify hazard map matches world geometry."""
+    print("Testing hazard map...")
+    m = CorridorModel(1.8, 0.0)
+
+    # At X=1.6 (near R2 start), top Y bins should be OPEN (no top hazard)
+    for y_bin in range(N_Y):
+        cx, cy = bin_to_xy(9, y_bin)  # x_bin=9 -> X=1.6
+        s = pose_to_flat(9, y_bin)
+        hazard = is_in_hazard(cx, cy)
+        label = "HAZARD" if hazard else "safe"
+        print(f"    X={cx:+.2f} Y={cy:+.3f} -> {label}  C={m.C_self[s]:.1f}")
+
+    # Top at X=0.4 (middle) should be blocked by hazard_top_2
+    for y_bin in range(N_Y):
+        cx, cy = bin_to_xy(6, y_bin)  # x_bin=6 -> X=0.4
+        hazard = is_in_hazard(cx, cy)
+        label = "HAZARD" if hazard else "safe"
+        if y_bin >= N_Y // 2:
+            print(f"    X={cx:+.2f} Y={cy:+.3f} -> {label}")
+
+    # At X=1.6, Y=0.57 should be safe (open area for yielding)
+    assert not is_in_hazard(1.6, 0.57), "X=1.6, Y=0.57 should be open"
+    # At X=0.4, Y=0.57 should be hazardous (top hazard)
+    assert is_in_hazard(0.4, 0.57), "X=0.4, Y=0.57 should be in hazard"
+    print("  Hazard map OK")
+
+
 def test_efe_basic():
     """Verify EFE computation produces finite values."""
     print("Testing basic EFE...")
@@ -870,6 +963,7 @@ def test_efe_basic():
 if __name__ == "__main__":
     test_discretization()
     test_model_matrices()
+    test_hazard_map()
     test_efe_basic()
     print()
     test_planner()
