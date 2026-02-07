@@ -1,2 +1,39 @@
-.venv
-__pycache__
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Webots
+*.wbproj
+webots/
+tools/
+extracted_webots/
+
+# Large files / archives
+*.exe
+*.7z
+*.rar
+diagram_MAO_ToM-main*
