@@ -103,6 +103,38 @@ Y=-1.0 └───────────────────────�
 
 Key insight: the **top side opens up** at |X| > 0.8 (no hazards). The empathic robot discovers this and yields into the open area.
 
+## Available Worlds
+
+All 11 layouts from `tom/envs/env_lava_variants.py` are available as Webots worlds, plus the original hand-tuned reference world. Generate them with:
+
+```bash
+python webots_sim/generate_worlds.py
+```
+
+| World File | Grid | Arena | Coordination Challenge |
+|------------|------|-------|------------------------|
+| `tiago_empathic_test.wbt` | - | 5x2m | Hand-tuned reference corridor |
+| `tiago_narrow.wbt` | 6x3 | 5.2x3.1m | Single-file corridor, collision unavoidable |
+| `tiago_wide.wbt` | 6x4 | 5.2x3.8m | Two-lane corridor, easy passing |
+| `tiago_bottleneck.wbt` | 8x4 | 6.6x3.8m | Wide areas with narrow center choke point |
+| `tiago_crossed_goals.wbt` | 6x4 | 5.2x3.8m | Agents must swap lanes to reach goals |
+| `tiago_risk_reward.wbt` | 8x4 | 6.6x3.8m | Fast risky path vs slow safe detour |
+| `tiago_double_bottleneck.wbt` | 10x4 | 8.0x3.8m | Two choke points with passing bay between |
+| `tiago_passing_bay.wbt` | 8x4 | 6.6x3.8m | Narrow corridor with one 2-cell bay for yielding |
+| `tiago_asymmetric_detour.wbt` | 8x4 | 6.6x3.8m | One agent has direct path, other must detour |
+| `tiago_t_junction.wbt` | 7x5 | 5.9x4.5m | Agents approach from different directions |
+| `tiago_symmetric_bottleneck.wbt` | 10x4 | 8.0x3.8m | Opposite sides through same bottleneck |
+| `tiago_vertical_bottleneck.wbt` | 6x8 | 5.2x6.6m | Vertical corridor with wide passing areas |
+
+### Auto-Discovery
+
+The controller automatically discovers arena geometry at startup:
+- Reads `RectangleArena.floorSize` to determine coordinate bounds
+- Finds all `HazardObstacle` nodes and extracts their positions/sizes
+- Calls `tom_planner.configure()` to set up the correct discretization
+
+This means the same controller works for any world file without code changes.
+
 ## Legacy Code
 
 Old controllers and world files from earlier iterations are preserved in `../legacy/webots/`.

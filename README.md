@@ -22,8 +22,9 @@ The central research goal is to test whether **alignment emerges naturally** whe
 6. [Hierarchical Planning](#6-hierarchical-planning)
 7. [Understanding the Results](#7-understanding-the-results)
 8. [JAX Acceleration](#8-jax-acceleration)
-9. [Future Roadmap](#9-future-roadmap)
-10. [Citation](#10-citation)
+9. [Webots Robot Simulation](#9-webots-robot-simulation)
+10. [Future Roadmap](#10-future-roadmap)
+11. [Citation](#11-citation)
 
 ---
 
@@ -206,12 +207,21 @@ Alignment-experiments/
 │   │
 │   ├── envs/
 │   │   ├── env_lava_v2.py        # Multi-agent environment
-│   │   └── env_lava_variants.py  # Layout definitions
+│   │   └── env_lava_variants.py  # Layout definitions (11 layouts)
 │   │
 │   └── planning/
 │       ├── si_empathy_lava.py    # EmpathicLavaPlanner (main class)
 │       ├── jax_si_empathy_lava.py # JAX-accelerated functions
 │       └── jax_hierarchical_planner.py # Hierarchical zone planner
+│
+├── webots_sim/                   # Physical robot simulation
+│   ├── controllers/tiago_empathic/
+│   │   ├── tiago_empathic.py     # Robot controller (motor, sensors)
+│   │   └── tom_planner.py        # Discrete POMDP with EFE + ToM
+│   ├── worlds/                   # 12 world files (11 generated + 1 hand-tuned)
+│   ├── protos/                   # HazardObstacle, Target protos
+│   ├── generate_worlds.py        # Generate all worlds from grid layouts
+│   └── README.md                 # Webots-specific documentation
 │
 ├── scripts/                      # Runnable experiments
 │   ├── run_empathy_sweep.py      # Main experiment sweep
@@ -228,7 +238,7 @@ Alignment-experiments/
 │   ├── empathy_sweep_*.csv       # Sweep results
 │   └── figs/                     # Generated plots
 │
-└── HIERARCHICAL_PLANNER_ROADMAP.md # Future development plans
+└── legacy/webots/                # Previous controller iterations
 ```
 
 ### Key Files Explained
@@ -454,7 +464,44 @@ JAX compiles functions on first call (JIT). Expect:
 
 ---
 
-## 9. Future Roadmap
+## 9. Webots Robot Simulation
+
+The grid-based experiments are complemented by a **physical robot simulation** in [Webots](https://cyberbotics.com/) using two TIAGo robots. The same Active Inference + ToM framework runs on continuous coordinates with a discrete POMDP generative model.
+
+### How It Works
+
+Two TIAGo robots navigate toward each other's starting positions. The **empathic** robot (high alpha) discovers open areas in the arena and yields laterally to let the **selfish** robot (low alpha) pass. This yielding behavior emerges from Expected Free Energy computation, not hard-coded rules.
+
+### Quick Start
+
+```bash
+# Generate all 11 world files from grid layouts
+python webots_sim/generate_worlds.py
+
+# Open a world in Webots
+..\webots\msys64\mingw64\bin\webots.exe webots_sim/worlds/tiago_passing_bay.wbt
+
+# Run the planner standalone (no Webots needed)
+cd webots_sim/controllers/tiago_empathic && python tom_planner.py
+```
+
+### Available Worlds
+
+| World | Challenge | Description |
+|-------|-----------|-------------|
+| `tiago_empathic_test` | Reference | Hand-tuned 5x2m corridor |
+| `tiago_narrow` | Collision unavoidable | Single-file, no room to pass |
+| `tiago_wide` | Easy passing | Two-lane corridor |
+| `tiago_bottleneck` | Choke point | Wide areas + narrow center |
+| `tiago_passing_bay` | Altruistic yielding | Narrow corridor with one bay |
+| `tiago_symmetric_bottleneck` | Pure coordination | Opposite sides, same bottleneck |
+| `tiago_t_junction` | Intersection | Agents approach from different directions |
+
+See [`webots_sim/README.md`](webots_sim/README.md) for the full list and technical details.
+
+---
+
+## 10. Future Roadmap
 
 See `HIERARCHICAL_PLANNER_ROADMAP.md` for detailed plans. Key upcoming features:
 
@@ -492,7 +539,7 @@ Replace hard-coded collision penalties with learned beliefs:
 
 ---
 
-## 10. Citation
+## 11. Citation
 
 If you use this codebase, please cite:
 

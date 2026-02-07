@@ -7,6 +7,7 @@ from controller import Supervisor
 import math
 
 # Import the ToM planner
+import tom_planner
 from tom_planner import ToMPlanner
 
 
@@ -49,6 +50,9 @@ class TiagoEmpathicNavigator:
         # Initialize devices and find other robot
         self._init_devices()
         self._find_other_robot()
+
+        # Auto-discover arena geometry and configure planner
+        self._configure_planner_from_world()
 
         # Create ToM planner with continuous positions
         self.planner = ToMPlanner(
@@ -145,6 +149,61 @@ class TiagoEmpathicNavigator:
                         return
 
         print(f"{self.name}: No other TIAGo robot found (single robot mode)")
+
+    def _discover_hazards(self):
+        """Find all HazardObstacle nodes and extract positions/sizes."""
+        hazards = []
+        root = self.robot.getRoot()
+        children = root.getField('children')
+        for i in range(children.getCount()):
+            node = children.getMFNode(i)
+            try:
+                type_name = node.getTypeName()
+            except Exception:
+                continue
+            if type_name == 'HazardObstacle':
+                try:
+                    pos = node.getField('translation').getSFVec3f()
+                    size = node.getField('size').getSFVec3f()
+                    # Store as (x_center, y_center, x_half_size, y_half_size)
+                    hazards.append((pos[0], pos[1], size[0] / 2.0, size[1] / 2.0))
+                except Exception as e:
+                    print(f"{self.name}: Warning - could not read hazard: {e}")
+        return hazards
+
+    def _get_arena_bounds(self):
+        """Read arena floor size to determine coordinate bounds."""
+        root = self.robot.getRoot()
+        children = root.getField('children')
+        for i in range(children.getCount()):
+            node = children.getMFNode(i)
+            try:
+                type_name = node.getTypeName()
+            except Exception:
+                continue
+            if type_name == 'RectangleArena':
+                try:
+                    floor_size = node.getField('floorSize').getSFVec2f()
+                    hx = floor_size[0] / 2.0
+                    hy = floor_size[1] / 2.0
+                    return -hx, hx, -hy, hy
+                except Exception as e:
+                    print(f"{self.name}: Warning - could not read arena size: {e}")
+        # Default: 5x2 arena
+        return -2.5, 2.5, -1.0, 1.0
+
+    def _configure_planner_from_world(self):
+        """Auto-discover world geometry and configure the planner."""
+        hazards = self._discover_hazards()
+        x_min, x_max, y_min, y_max = self._get_arena_bounds()
+        # Shrink bounds slightly so edge bins are inside the arena
+        margin = 0.3
+        tom_planner.configure(
+            x_min + margin, x_max - margin,
+            y_min, y_max,
+            hazards=hazards
+        )
+        print(f"{self.name}: Discovered {len(hazards)} hazards, arena=[{x_min:.1f},{x_max:.1f}]x[{y_min:.1f},{y_max:.1f}]")
 
     def normalize_angle(self, angle):
         """Normalize angle to [-pi, pi]."""

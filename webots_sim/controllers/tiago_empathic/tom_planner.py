@@ -83,6 +83,59 @@ N_MOTION = 4  # {forward=0, backward=1, lateral=2, still=3}
 
 
 # ============================================================================
+# Runtime configuration (for different arenas/layouts)
+# ============================================================================
+
+def configure(x_min, x_max, y_min, y_max, hazards=None, n_x=None, n_y=None):
+    """Reconfigure discretization for a different arena/layout.
+
+    Call this BEFORE creating any CorridorModel or ToMPlanner.
+    If not called, defaults match tiago_empathic_test.wbt (5x2m arena).
+
+    Parameters
+    ----------
+    x_min, x_max : float
+        Arena X bounds (meters).
+    y_min, y_max : float
+        Arena Y bounds (meters).
+    hazards : list of (x, y, half_sx, half_sy) tuples, optional
+        Hazard obstacle positions and half-sizes.
+    n_x, n_y : int, optional
+        Grid resolution. If None, auto-computed from arena size.
+    """
+    global X_MIN, X_MAX, Y_MIN, Y_MAX, HAZARDS
+    global X_EDGES, X_CENTERS, Y_EDGES, Y_CENTERS
+    global N_X, N_Y, N_POSE
+
+    X_MIN, X_MAX = x_min, x_max
+    Y_MIN, Y_MAX = y_min, y_max
+
+    # Auto-compute grid resolution if not specified
+    x_span = x_max - x_min
+    y_span = y_max - y_min
+    if n_x is not None:
+        N_X = n_x
+    else:
+        N_X = max(7, round(x_span / 0.4))
+    if n_y is not None:
+        N_Y = n_y
+    else:
+        N_Y = max(5, round(y_span / 0.3))
+
+    X_EDGES = np.linspace(X_MIN, X_MAX, N_X + 1)
+    X_CENTERS = 0.5 * (X_EDGES[:-1] + X_EDGES[1:])
+    Y_EDGES = np.linspace(Y_MIN, Y_MAX, N_Y + 1)
+    Y_CENTERS = 0.5 * (Y_EDGES[:-1] + Y_EDGES[1:])
+    N_POSE = N_X * N_Y
+
+    if hazards is not None:
+        HAZARDS = hazards
+
+    print(f"[tom_planner] Configured: X=[{X_MIN:.1f},{X_MAX:.1f}] Y=[{Y_MIN:.1f},{Y_MAX:.1f}] "
+          f"grid={N_X}x{N_Y}={N_POSE} states, {len(HAZARDS)} hazards")
+
+
+# ============================================================================
 # Discretization helpers
 # ============================================================================
 

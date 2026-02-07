@@ -1,0 +1,119 @@
+#VRML_SIM R2025a utf8
+# Auto-generated world for layout: narrow
+# Grid: 6x3, Arena: 5.2x3.1m
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/pal_robotics/tiago/protos/Tiago.proto"
+EXTERNPROTO "../protos/Target.proto"
+EXTERNPROTO "../protos/HazardObstacle.proto"
+
+WorldInfo {
+  title "TIAGo Narrow"
+  basicTimeStep 16
+}
+
+Viewpoint {
+  orientation -0.5773 0.5773 0.5773 2.0944
+  position 0 0 6.8
+}
+
+TexturedBackground {
+  texture "empty_office"
+}
+
+TexturedBackgroundLight {
+  texture "empty_office"
+}
+
+# Arena: 5.2m x 3.1m
+RectangleArena {
+  floorSize 5.2 3.1
+}
+
+# Hazard obstacles (2 merged blocks from 12 lava cells)
+HazardObstacle {
+  translation 0.000 0.700 0.075
+  name "hazard_0"
+  size 4.15 0.65 0.15
+}
+HazardObstacle {
+  translation 0.000 -0.700 0.075
+  name "hazard_1"
+  size 4.15 0.65 0.15
+}
+
+# Goal markers
+Target {
+  translation 1.750 0.000 0.02
+  name "Goal_TIAGo_1"
+  color 0.2 0.5 1
+  radius 0.15
+}
+
+Target {
+  translation -1.750 0.000 0.02
+  name "Goal_TIAGo_2"
+  color 1 0.4 0.7
+  radius 0.15
+}
+
+# Empathy indicators (RED=selfish, GREEN=empathic)
+DEF MARKER_SELFISH Solid {
+  translation -1.750 0.000 1.8
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.2 0.2
+        emissiveColor 0.5 0 0
+        roughness 0.3
+        metalness 0
+      }
+      geometry Sphere {
+        radius 0.12
+      }
+    }
+  ]
+  name "marker_selfish"
+}
+
+DEF MARKER_EMPATHIC Solid {
+  translation 1.750 0.000 1.8
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.2 1 0.4
+        emissiveColor 0 0.5 0
+        roughness 0.3
+        metalness 0
+      }
+      geometry Sphere {
+        radius 0.12
+      }
+    }
+  ]
+  name "marker_empathic"
+}
+
+# TIAGo 1 - agent_id=0
+# alpha=0.0 (selfish)
+Tiago {
+  translation -1.750 0.000 0.095
+  rotation 0 0 1 0.00000
+  name "TIAGo_1"
+  controller "tiago_empathic"
+  supervisor TRUE
+  customData "1.75,0.00,0.0,0"
+}
+
+# TIAGo 2 - agent_id=1
+# alpha=6.0 (empathic)
+Tiago {
+  translation 1.750 0.000 0.095
+  rotation 0 0 1 3.14159
+  name "TIAGo_2"
+  controller "tiago_empathic"
+  supervisor TRUE
+  customData "-1.75,0.00,6.0,1"
+}
